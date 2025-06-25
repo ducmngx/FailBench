@@ -1,9 +1,8 @@
 # GenAISim - Saad_Dev Branch
 
-## Code Organization
-I'm basing the code organization on a mujoco example I found online. https://github.com/justagist/mujoco_panda/tree/master
 
-We can adjust as we develop this repo but I just needed something to start with.
+## Code Organization
+Currently its a bit messy. ill fix it over the week. The jackal xml file can be found in model/jackal.xml. I want to base the code organization on a mujoco example I found online - https://github.com/justagist/mujoco_panda/tree/master. We can adjust as we develop this repo.
 
 ## Helpful things to know
 - mujoco can load urdf files with minimal changes. However its better to convert a URDF file to a mujoco xml file via `./compile /path/to/model.urdf /path/to/mujuco_model.xml`. 
