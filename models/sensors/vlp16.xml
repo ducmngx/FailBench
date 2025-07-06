@@ -1,0 +1,34 @@
+<mujoco model="vlp16">
+
+  <compiler meshdir="./meshes/"/>
+
+  <asset>
+    <mesh name="VLP16_base_1" file="VLP16_base_1.stl"/>
+    <mesh name="VLP16_base_2" file="VLP16_base_2.stl"/>
+    <mesh name="VLP16_scan" file="VLP16_scan.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="vlp16">
+    <!-- vlp bottom base -->
+      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" mesh="VLP16_base_1"/>
+      <!-- vlp top base -->
+      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" mesh="VLP16_base_2"/>
+      <!-- vlp body -->
+      <geom quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" mesh="VLP16_scan"/>
+      
+      <replicate count="360" euler="0 0 1">
+        <replicate  count="16" euler="0 1.875 0">
+        <!-- middle of scanner -->
+          <site name="rf" size="0.001" pos="0 0 0.0377" rgba="0 0 0 0" euler="0 75 0"/>
+        </replicate>
+      </replicate>
+    </body>
+      
+  </worldbody>
+
+  <sensor>
+    <rangefinder site="rf"/>
+  </sensor>
+
+</mujoco>

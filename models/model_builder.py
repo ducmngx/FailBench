@@ -1,0 +1,1 @@
+# this file is supposed to combine the different xml files in a similar way to robosuite

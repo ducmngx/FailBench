@@ -21,35 +21,27 @@ class DifferentialDriveController(BaseController):
         self.left_wheel = left_wheel_ctrl
         self.right_wheel = right_wheel_ctrl
 
-        print(type(self.left_wheel))
 
     def control(self, *args):
         assert len(args) == 2, "Differential Drive Controller expects 2 arguments - linear velocity and angular velocity"
         linear = args[0]
         angular = args[1]
 
-        w_r = (linear + angular*(self.vehicle_width/2))/self.wheel_radius
-        w_l = (linear - angular*(self.vehicle_width/2))/self.wheel_radius
+        w_r = (linear - angular*(self.vehicle_width/2))/self.wheel_radius
+        w_l = (linear + angular*(self.vehicle_width/2))/self.wheel_radius
 
         v_r = self.wheel_radius*w_r
         v_l = self.wheel_radius*w_l
 
-
-
         if isinstance(self.left_wheel, np.ndarray):
-            print("yay")
             for i in range(len(self.left_wheel)):
                 self.left_wheel[i] = v_l
-            # self.left_wheel = np.array([v_l]*len(self.left_wheel))
         else:
             self.left_wheel = v_l
 
         if isinstance(self.right_wheel, np.ndarray):
             for i in range(len(self.right_wheel)):
                 self.right_wheel[i] = v_r
-            # self.right_wheel = np.array([v_r]*len(self.right_wheel))
         else:
             self.right_wheel = v_r
-        
-        print("left_wheel:", self.left_wheel)
-        print("right_wheel:", self.right_wheel)
+    

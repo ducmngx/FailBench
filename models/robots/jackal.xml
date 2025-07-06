@@ -1,6 +1,5 @@
 <mujoco model="jackal">
   <compiler angle="radian" meshdir="./meshes/"/>
-  <option gravity="0 0 -9.81" />
 
   <asset>
     <mesh name="jackal-wheel" file="jackal-wheel.stl"/>
@@ -10,8 +9,6 @@
 
   <worldbody>
 
-    <geom type="plane" size="10 10 0.1" pos="0 0 -0.1" rgba=".9 .9 .9 1"/>
-    
     <body name="chassis">
       <joint type="free" />
       <geom pos="0 0 -0.0655" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.2 0.2 0.2 1" mesh="jackal-base"/>
@@ -50,10 +47,10 @@
 
 
   <actuator>
-    <motor name="front_left_actuator" joint="front_left_wheel" gear="10"/>
-    <motor name="rear_left_actuator" joint="rear_left_wheel" gear="10"/>
+    <velocity name="front_left_actuator" joint="front_left_wheel" kv="3"/>
+    <velocity name="rear_left_actuator" joint="rear_left_wheel" kv="3"/>
     
-    <motor name="front_right_actuator" joint="front_right_wheel" gear="10"/>
-    <motor name="rear_right_actuator" joint="rear_right_wheel" gear="10"/>
+    <velocity name="front_right_actuator" joint="front_right_wheel" kv="3"/>
+    <velocity name="rear_right_actuator" joint="rear_right_wheel" kv="3"/>
   </actuator>
 </mujoco>
