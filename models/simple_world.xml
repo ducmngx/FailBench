@@ -1,0 +1,11 @@
+<mujoco model="simple_world">
+  
+  <option gravity="0 0 -9.81" />
+
+  <include file="robots/jackal.xml"/>
+
+  <worldbody>
+    <geom type="plane" size="10 10 0.1" pos="0 0 -0.1" rgba=".9 .9 .9 1"/>
+  </worldbody>
+
+</mujoco>
