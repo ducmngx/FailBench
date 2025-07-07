@@ -1,5 +1,11 @@
 # GenAISim - Saad_Dev Branch
 
+## TODO
+1. Write models/model_builder.py for robustness - this file should be able to combine different robots and different sensors depending on the arguments given to the file and the configuration files of the robots. 
+    - Right now the sensors are hard-coded on top of the jackal so we can go to the next step. (Done)
+2. Write a python wrapper around the rangefinder sensors to take in N amount of sensor values and output a single array that concatenates all the sensor readings. For eg, VLP16 has 360x16 rangefinder sensors. The wrapper should take in the rf_{horizontal}_{vertical} sensor and produce a single array of size (360, 16).
+    - Regarding where this file should exist, if we follow robosuite then we can either put all xml/mesh files in an "assets" folder and then have a seperate folder for these wrappers around sensors. Or we can have a utils folder in root and put the wrappers there. Im inclined to the first approach since the wrappers are specific and not general.
+3. Write a navigation planner that takes in sensor input, goal coordinates, and current coordinates and outputs a plan in the form of a sequence linear/angular velocities to get to the goal.
 
 ## Code Organization
 Currently its a bit messy. ill fix it over the week. The jackal xml file can be found in model/jackal.xml. I want to base the code organization on a mujoco example I found online - [Franka Panda](https://github.com/justagist/mujoco_panda/tree/master). We can adjust as we develop this repo.
