@@ -1,5 +1,5 @@
 <mujoco model="jackal">
-  <compiler angle="radian" meshdir="./meshes/"/>
+  <compiler angle="radian" meshdir="./models/meshes/"/>
 
   <asset>
     <mesh name="jackal-wheel" file="jackal-wheel.stl"/>
@@ -9,7 +9,7 @@
 
   <worldbody>
 
-    <body name="chassis">
+    <body name="jackal-chassis">
       <joint type="free" />
       <geom pos="0 0 -0.0655" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.2 0.2 0.2 1" mesh="jackal-base"/>
       <geom size="0.21 0.155 0.092" pos="0 0 0.092" type="box" rgba="0.2 0.2 0.2 1"/>
