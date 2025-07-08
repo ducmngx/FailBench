@@ -1,3 +1,5 @@
+#Path: robocasa/utils
+
 """
 Collection of constants for cameras / robots / etc
 in kitchen environments
