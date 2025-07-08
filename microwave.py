@@ -1,3 +1,5 @@
+#Path: robocasa/models/fixtures
+
 import numpy as np
 
 import robocasa.utils.object_utils as OU
