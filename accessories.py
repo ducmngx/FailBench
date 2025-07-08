@@ -1,3 +1,5 @@
+#Path: robocasa/models/fixtures
+
 import numpy as np
 from robosuite.utils.mjcf_utils import array_to_string as a2s
 from robosuite.utils.mjcf_utils import string_to_array as s2a
