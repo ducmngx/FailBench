@@ -1,3 +1,5 @@
+#Path: robocasa/environments/kitchen
+
 import os
 import random
 import xml.etree.ElementTree as ET
