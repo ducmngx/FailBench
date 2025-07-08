@@ -1,3 +1,5 @@
+#Path: robosuite/environments
+
 from collections import OrderedDict
 from copy import deepcopy
 
