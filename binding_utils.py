@@ -1,3 +1,5 @@
+#Path: robosuite/utils
+
 """
 Useful classes for supporting DeepMind MuJoCo binding.
 """
