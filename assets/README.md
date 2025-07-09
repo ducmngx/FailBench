@@ -5,7 +5,8 @@ So we gotta fix that.
 ## Environments
 We currently have only 1 environment that andrew has extracted from robocasa. I stripped away all textures and meshes and its now a scary red colored environment. Purpose of it is to simply go through the generated XML tree and understand how to do mapping, planning, etc. 
 
-For visualization we can either follow Andrew's tutorial on how to generate the environments or we can download the assets for the environments from robocasa's github. However, the latter method is not guaranteed to work as *maybe* the assets themselves are generated. 
+Update (07/09/2025)  
+For visualization we have to follow Andrew's tutorial on how to generate the environments, we cannot simply download the assets  method does not work as assets are actually generated from yaml files. See [robocasa/model_zoo](https://github.com/robocasa/robocasa/tree/main/robocasa/scripts/model_zoo).
 
 ## Models 
 
