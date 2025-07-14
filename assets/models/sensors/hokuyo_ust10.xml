@@ -1,0 +1,22 @@
+<mujoco model="hokuyo_ust10">
+
+ <compiler meshdir="./meshes/"/>
+
+  <asset>
+    <mesh name="hokuyo_ust10" file="hokuyo_ust10.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="hokoyu_ust10">
+      <geom type="mesh" contype="0" conaffinity="0" group="1"  mesh="hokuyo_ust10"/>
+      <replicate count="270" euler="0 0 1">
+          <site name="rf" size="0.005" rgba="1 0 0 1" pos="0 0 0.05" euler="90 -45 0"/>
+      </replicate>
+    </body>
+  </worldbody>
+
+  <sensor>
+    <rangefinder site="rf"/>
+  </sensor>
+
+</mujoco>

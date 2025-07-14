@@ -1,93 +1,36 @@
-# GenAISim
+# GenAISim - Saad_Dev Branch
 
-# MuJoCo Installation and Running Guide (Ubuntu, Conda)
+## Tasks to be done next 
 
-This guide helps you install **MuJoCo** and **mujoco-py** on Ubuntu using a Conda environment.
-
----
-
-## 1. Prerequisites
-
-- Ubuntu 18.04/20.04/22.04
-- Anaconda/Miniconda installed
-
----
-
-## 2. Create and Activate Conda Environment
-
-- conda create -n mujoco_env python=3.8
-- conda activate mujoco_env
-
----
-
-## 3. Install System Dependencies
-
-- sudo apt update
-- sudo apt install git patchelf libosmesa6-dev libgl1-mesa-glx libglfw3 libglew-dev python3-pip
-
----
-
-## 4. Download and Extract MuJoCo
-
-1. Download MuJoCo 2.1.0 (or latest; tested with 2.1.0) from [mujoco.org/download](https://mujoco.org/download).
-2. Extract to your home directory:
-
-- mkdir -p ~/.mujoco
-- tar -xvf mujoco210-linux-x86_64.tar.gz -C ~/.mujoco/
-
----
-
-## 5. Set Environment Variables
-
-Add the following lines to your `~/.bashrc` (replace `<username>` with your username):
-
-- export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/<username>/.mujoco/mujoco210/bin
-- export MUJOCO_PY_MUJOCO_PATH=/home/<username>/.mujoco/mujoco210
-- export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
-- export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so
+1. Write a navigation planner that takes in sensor input, goal coordinates, and current coordinates and outputs a plan in the form of a sequence linear/angular velocities to get to the goal.
+    - For this we need to construct a map from the mujoco world. See the related [readme page](./planners/mapping/README.md)
+    - assume we have a map, write a planner.
+2. Write models/model_builder.py for robustness - this file should be able to combine different robots and different sensors depending on the arguments given to the file and the configuration files of the robots. 
+    - Right now the sensors are hard-coded on top of the jackal so we can go to the next step. (Done)
+    - Need to 
+3. Write a TAMP planner for manipulator, I dont think TAMP is necessary for UGV. 
 
 
-Then reload your bash settings:
 
-- source ~/.bashrc
+## Tasks that eventually need to be done
+1. Integrate Camera -> needed for Amir, not necessary for Aaron. 
+2. Write a python wrapper around the rangefinder sensors to take in N amount of sensor values and output a single array that concatenates all the sensor readings. For eg, VLP16 has 360x16 rangefinder sensors. The wrapper should take in the rf_{horizontal}_{vertical} sensor and produce a single array of size (360, 16).
+    - Not urgent as we assume that we have the whole map from mujoco.
+    - Regarding where this file should exist, if we follow robosuite then we can either put all xml/mesh files in an "assets" folder and then have a seperate folder for these wrappers around sensors. Or we can have a utils folder in root and put the wrappers there. Im inclined to the first approach since the wrappers are specific and not general.
 
----
+## Code Organization
+Currently its a bit messy. ill fix it over the week. The jackal xml file can be found in model/jackal.xml. I want to base the code organization on a mujoco example I found online - [Franka Panda](https://github.com/justagist/mujoco_panda/tree/master). We can adjust as we develop this repo.
 
-## 6. Install Python Dependencies
+On Aaron's suggestion, I'll follow [Robosuite](http://github.com/ARISE-Initiative/robosuite/tree/master) for writing the controllers. 
 
-- conda install -c conda-forge glfw glew
-- pip install mujoco-py
+We can switch to follow Robosuite for the models too (rather than Franka Panda). For now (06.29.24) we will follow Franka.
 
----
+## Helpful things to know
+- mujoco can load urdf files with minimal changes. However its better to convert a URDF file to a mujoco xml file via `./compile /path/to/model.urdf /path/to/mujuco_model.xml`. 
+    - References:
+        - https://mujoco.readthedocs.io/en/stable/modeling.html#modeling
+        - https://github.com/robotlearning123/dual_ur5_husky_mujoco/tree/dual_ur5_husky_mujoco
+- Parallel Training:
+    - "On a side note, what we are doing here w Hopkins is I’m building the jackal and set up 90 house environments (matterport 3d). They plan to train with IsaacLab, which should allow thousands if episodes a second with parallel envs. In the future, if we plan to do training, we should take advantage of that too"
 
-## 7. (Optional) Install Additional Packages
 
-sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3
-
----
-
-## 8. Test Your Installation
-
-- Try importing mujoco-py in Python:
-
-python -c "import mujoco_py"
-
-- Or run an example (if available):
-
-python test_mujoco.py
-
----
-
-## 9. Troubleshooting
-
-- Ensure all environment variables are set correctly and `~/.mujoco/mujoco210` exists.
-- If you see library errors, check that `LD_LIBRARY_PATH` includes the MuJoCo bin directory.
-- For GPU rendering, additional NVIDIA libraries may be required.
-
----
-
-**References:**  
-- [MuJoCo official docs](https://mujoco.org/docs/)
-- [Community installation guides](https://github.com/openai/mujoco-py)
-
----

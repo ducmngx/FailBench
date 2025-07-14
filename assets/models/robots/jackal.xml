@@ -1,0 +1,56 @@
+<mujoco model="jackal">
+  <compiler angle="radian" meshdir="./models/meshes/"/>
+
+  <asset>
+    <mesh name="jackal-wheel" file="jackal-wheel.stl"/>
+    <mesh name="jackal-base" file="jackal-base.stl"/>
+    <mesh name="jackal-fender" file="jackal-fender.stl"/>
+  </asset>
+
+  <worldbody>
+
+    <body name="jackal-chassis">
+      <joint type="free" />
+      <geom pos="0 0 -0.0655" quat="0.5 0.5 0.5 0.5" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.2 0.2 0.2 1" mesh="jackal-base"/>
+      <geom size="0.21 0.155 0.092" pos="0 0 0.092" type="box" rgba="0.2 0.2 0.2 1"/>
+
+      <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.8 0.8 0 1" mesh="jackal-fender"/>
+      <geom pos="0 0 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.8 0.8 0 1" mesh="jackal-fender"/>
+
+      <geom size="0.026 0.008" pos="-0.18 0.126 0.1895" type="cylinder" contype="0" conaffinity="0" group="1" rgba="0.15 0.15 0.15 1"/>
+      
+      <body name="front_left_wheel_link" pos="0.131 0.187795 0.0345">
+        <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.477" diaginertia="0.0024 0.0013 0.0013"/>
+        <joint name="front_left_wheel" pos="0 0 0" axis="0 1 0"/>
+        <geom quat="0.707107 0.707107 0 0" type="mesh"  rgba="0.15 0.15 0.15 1" mesh="jackal-wheel"/>
+      </body>
+      <body name="front_right_wheel_link" pos="0.131 -0.187795 0.0345">
+        <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.477" diaginertia="0.0024 0.0013 0.0013"/>
+        <joint name="front_right_wheel" pos="0 0 0" axis="0 1 0"/>
+        <geom quat="0.707107 0.707107 0 0" type="mesh"  rgba="0.15 0.15 0.15 1" mesh="jackal-wheel"/>
+      </body>
+      <body name="rear_left_wheel_link" pos="-0.131 0.187795 0.0345">
+        <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.477" diaginertia="0.0024 0.0013 0.0013"/>
+        <joint name="rear_left_wheel" pos="0 0 0" axis="0 1 0"/>
+        <geom quat="0.707107 0.707107 0 0" type="mesh"  rgba="0.15 0.15 0.15 1" mesh="jackal-wheel"/>
+      </body>
+      <body name="rear_right_wheel_link" pos="-0.131 -0.187795 0.0345">
+        <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.477" diaginertia="0.0024 0.0013 0.0013"/>
+        <joint name="rear_right_wheel" pos="0 0 0" axis="0 1 0"/>
+        <geom quat="0.707107 0.707107 0 0" type="mesh"  rgba="0.15 0.15 0.15 1" mesh="jackal-wheel"/>
+      </body>
+
+    </body>
+
+    
+  </worldbody>
+
+
+  <actuator>
+    <velocity name="front_left_actuator" joint="front_left_wheel" kv="3"/>
+    <velocity name="rear_left_actuator" joint="rear_left_wheel" kv="3"/>
+    
+    <velocity name="front_right_actuator" joint="front_right_wheel" kv="3"/>
+    <velocity name="rear_right_actuator" joint="rear_right_wheel" kv="3"/>
+  </actuator>
+</mujoco>
