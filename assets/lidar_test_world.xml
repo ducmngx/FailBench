@@ -1,0 +1,21 @@
+<!-- just a file to test/debug the different sensors xml files -->
+<mujoco model="lidar_test_world">
+
+  <include file="models/sensors/vlp16.xml"/>
+
+  <worldbody>
+    <geom size=".4" pos="1 0 0"/>
+    <geom size=".4" pos="1 1 0"/>
+    <geom size=".4" pos="0 1 0"/>
+
+    <geom size=".4" pos="-1 0 0"/>
+    <geom size=".4" pos="-1 -1 0"/>
+    <geom size=".4" pos="0 -1 0"/>
+
+    <geom size=".4" pos="-1 1 0"/>
+    <geom size=".4" pos="1 -1 0"/>
+
+    <light pos="0 0 3"/> 
+  </worldbody>
+
+</mujoco>
