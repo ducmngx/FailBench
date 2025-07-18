@@ -1,0 +1,14 @@
+<mujoco model="kitchen_env">
+  <include file="simple_world.xml" />
+  <worldbody>
+    <body name="cup0" pos="1 -4 1" quat="1 0 0 0">
+      <include file="cup/cup_2/cup_assets.xml" />
+    </body>
+    <body name="jackal" pos="0 0 0" quat="1 0 0 0">
+      <body name="hokuyo" pos="0 0 0.1">
+        <include file="hokuyo/hokuyo_2/hokuyo_assets.xml" />
+      </body>
+      <body name="zed" pos="0.2 0 0.15"></body>
+    </body>
+  </worldbody>
+</mujoco>

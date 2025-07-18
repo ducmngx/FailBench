@@ -1,0 +1,6 @@
+<mujoco model="kitchen_env">
+    <include file="simple_world.xml"/>
+    
+    <worldbody>
+    </worldbody>
+</mujoco>

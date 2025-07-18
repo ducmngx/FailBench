@@ -1,7 +1,12 @@
-robot: jackal
-env: kitchen
-robot_pos_in_env: 50, 100
-robot_pose_in_env: 90
-robot_sensors: [hokuyo, zed]
-robot_sensor_kwargs: {hokuyo: {pos: [0,0, 0.1]}}
-
+bodies:
+  robot:
+    name: jackal
+    pos: [50, 100]
+    pose: 90
+    bodies:
+      - name: hokuyo
+        pos: [0, 0, 0.1]
+        type: lidar
+      - name: zed
+        pos: [0.2, 0, 0.15]
+        type: camera
