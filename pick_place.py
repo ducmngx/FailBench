@@ -176,8 +176,8 @@ class PickPlace(ManipulationEnv):
         initialization_noise="default",
         table_full_size=(0.39, 0.49, 0.82),
         table_friction=(1, 0.005, 0.0001),
-        bin1_pos=(0.1, -0.25, 0.82),
-        bin2_pos=(0.1, 0.28, 0.82),
+        bin1_pos=(0.1, -0.25, 0.8),
+        bin2_pos=(0.1, 0.28, 0.8),
         z_offset=0.0,
         z_rotation=None,
         use_camera_obs=True,
@@ -430,7 +430,37 @@ class PickPlace(ManipulationEnv):
         """
         self.placement_initializer = SequentialCompositeSampler(name="ObjectSampler")
 
-        # can sample anywhere in bin
+        '''
+        num_cols = 2
+        spacing = 0.08  # spacing between objects in x and y
+        start_x = -0.08  # grid origin (relative to bin1_pos)
+        start_y = -0.08
+        fixed_z = 0.02  # height above bin1_pos
+        fixed_quat = [1.0, 0.0, 0.0, 0.0]
+
+        for i, obj in enumerate(self.objects):
+            row = i // num_cols
+            col = i % num_cols
+            x = start_x + col * spacing
+            y = start_y + row * spacing
+            z = fixed_z
+
+            self.placement_initializer.append_sampler(
+                sampler=UniformRandomSampler(
+                    name=f"{obj.name}_Sampler",
+                    mujoco_objects=obj,
+                    x_range=[x, x],
+                    y_range=[y, y],
+                    rotation=0.0,
+                    rotation_axis="z",
+                    ensure_object_boundary_in_range=False,
+                    ensure_valid_placement=False,
+                    reference_pos=self.bin1_pos,
+                    z_offset=z,
+                )
+            )
+        '''
+        
         bin_x_half = self.model.mujoco_arena.table_full_size[0] / 2 - 0.05
         bin_y_half = self.model.mujoco_arena.table_full_size[1] / 2 - 0.05
 
@@ -443,13 +473,14 @@ class PickPlace(ManipulationEnv):
                 y_range=[-bin_y_half, bin_y_half],
                 rotation=self.z_rotation,
                 rotation_axis="z",
-                ensure_object_boundary_in_range=True,
-                ensure_valid_placement=True,
+                ensure_object_boundary_in_range=False,
+                ensure_valid_placement=False,
                 reference_pos=self.bin1_pos,
                 z_offset=self.z_offset,
             )
         )
-
+        
+        
         # each visual object should just be at the center of each target bin
         index = 0
         for vis_obj in self.visual_objects:
@@ -716,10 +747,10 @@ class PickPlace(ManipulationEnv):
             # Loop through all objects and reset their positions
             for obj_pos, obj_quat, obj in object_placements.values():
                 # Set the visual object body locations
-                if "visual" in obj.name.lower():
-                    self.sim.model.body_pos[self.obj_body_id[obj.name]] = obj_pos
-                    self.sim.model.body_quat[self.obj_body_id[obj.name]] = obj_quat
-                else:
+                self.sim.model.body_pos[self.obj_body_id[obj.name]] = obj_pos
+                self.sim.model.body_quat[self.obj_body_id[obj.name]] = obj_quat
+
+                if "visual" not in obj.name.lower():
                     # Set the collision object joints
                     self.sim.data.set_joint_qpos(obj.joints[0], np.concatenate([np.array(obj_pos), np.array(obj_quat)]))
 
