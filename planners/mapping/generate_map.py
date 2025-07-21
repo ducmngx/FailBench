@@ -8,7 +8,6 @@ import trimesh
 from .map import Map
 
 
-
 class Mapper:
     INCLUDE_KEYWORDS = [
         
@@ -43,7 +42,7 @@ class Mapper:
         self.mjdata = mjdata
         self.static_scale = static_scale *2
         self.robot_max_height = robot_max_height
-        self.map = Map(type="grid", init_resolution=static_scale)
+        self.map = Map(type="grid", init_resolution=self.static_scale)
         self.label_map = None
         self.object_poses = {}
         self.mesh_dir = None
@@ -153,7 +152,9 @@ class Mapper:
         self.width = int(np.ceil((self.x_max - self.x_min) * self.static_scale))
         self.height = int(np.ceil((self.y_max - self.y_min) * self.static_scale))
 
-        self.map.set_size(self.height, self.width) # .np.zeros((self.height, self.width), dtype=bool)
+        print(f"generate_map max_mins: x:({self.x_min}, {self.x_max}), y:({self.y_min}, {self.y_max})")
+        self.map.set_size(self.height, self.width) 
+        self.map.set_world_mins(self.x_min, self.y_min)
         self.label_map = np.zeros((self.height, self.width), dtype=np.uint8)
 
         for geom in self.geoms_info:

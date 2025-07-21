@@ -1,29 +1,21 @@
-# GenAISim - Saad_Dev Branch
+# Navigation
+Running `mjpython main.py` runs an A* planner on the kitchen environment to move the jackal from the start to goal positions. 
 
-## Tasks to be done next 
-
-1. Write a navigation planner that takes in sensor input, goal coordinates, and current coordinates and outputs a plan in the form of a sequence linear/angular velocities to get to the goal.
-    - For this we need to construct a map from the mujoco world. See the related [readme page](./planners/mapping/README.md)
-    - assume we have a map, write a planner.
-2. Write models/model_builder.py for robustness - this file should be able to combine different robots and different sensors depending on the arguments given to the file and the configuration files of the robots. 
-    - Right now the sensors are hard-coded on top of the jackal so we can go to the next step. (Done)
-    - Need to 
-3. Write a TAMP planner for manipulator, I dont think TAMP is necessary for UGV. 
+### Tasks Left
+1. **Write local planner**: Navigation is done by position only, essentially jackal is jumping. We have a differential driver to move the jackal given linear and angular velocities (see diff_drive_tester.py). We need to write a local planner that uses the diff. driver.
+2. **Integrate model_builder**: Jackal is manually put into the environment (see assets/environments/jackal_in_kitchen.xml). We need to integrate the model_builder branch into this code to build up jackal (and other robots) into random environments
+3. **Code clean up**: Code is kind of messy. Methods need to be commented and cleaned. ReadMes need to get updated or deleted.
+4. **Robot Class**: Somewhat related to navigation as currently the jackal's size is manually inputted into the code (see main.py). If we can initialize a jackal object and extract the size from it that would be better. This is related to Task 3 as it would make the platform's code cleaner in general (such as encapsulating mjData).
 
 
-
-## Tasks that eventually need to be done
-1. Integrate Camera -> needed for Amir, not necessary for Aaron. 
-2. Write a python wrapper around the rangefinder sensors to take in N amount of sensor values and output a single array that concatenates all the sensor readings. For eg, VLP16 has 360x16 rangefinder sensors. The wrapper should take in the rf_{horizontal}_{vertical} sensor and produce a single array of size (360, 16).
+# Unrelated to Navigation
+## Tasks 
+1. Robot classes need to be created for ease of coding up the platform (encapsulating mjData).
+2. Integrate Camera -> needed for Amir, not necessary for Aaron. 
+3. Write a python wrapper around the rangefinder sensors to take in N amount of sensor values and output a single array that concatenates all the sensor readings. For eg, VLP16 has 360x16 rangefinder sensors. The wrapper should take in the rf_{horizontal}_{vertical} sensor and produce a single array of size (360, 16).
     - Not urgent as we assume that we have the whole map from mujoco.
     - Regarding where this file should exist, if we follow robosuite then we can either put all xml/mesh files in an "assets" folder and then have a seperate folder for these wrappers around sensors. Or we can have a utils folder in root and put the wrappers there. Im inclined to the first approach since the wrappers are specific and not general.
 
-## Code Organization
-Currently its a bit messy. ill fix it over the week. The jackal xml file can be found in model/jackal.xml. I want to base the code organization on a mujoco example I found online - [Franka Panda](https://github.com/justagist/mujoco_panda/tree/master). We can adjust as we develop this repo.
-
-On Aaron's suggestion, I'll follow [Robosuite](http://github.com/ARISE-Initiative/robosuite/tree/master) for writing the controllers. 
-
-We can switch to follow Robosuite for the models too (rather than Franka Panda). For now (06.29.24) we will follow Franka.
 
 ## Helpful things to know
 - mujoco can load urdf files with minimal changes. However its better to convert a URDF file to a mujoco xml file via `./compile /path/to/model.urdf /path/to/mujuco_model.xml`. 

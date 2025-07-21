@@ -1,5 +1,7 @@
-<mujoco model="jackal">
-  <compiler angle="radian" meshdir="./models/meshes/"/>
+<mujoco model="Test">
+
+  <compiler angle="radian" meshdir="../models/meshes/"/>
+  <include file="dumped_kitchen_noassets.xml"/>
 
   <asset>
     <mesh name="jackal-wheel" file="jackal-wheel.stl"/>
@@ -9,7 +11,7 @@
 
   <worldbody>
 
-    <body name="jackal">
+    <body name="jackal" pos="3.04 -3 0.1" quat="0.707107 0 0 0.707107">
       <site name="jackal_chassis_center" pos="0 0 0" size="0.002" rgba="1 0 0 1"/>
       <joint type="free" name="jackal_free_joint" />
       <geom type="mesh" pos="0 0 -0.0655" quat="0.5 0.5 0.5 0.5" contype="0" conaffinity="0" group="1" rgba="0.2 0.2 0.2 1" mesh="jackal-base"/>

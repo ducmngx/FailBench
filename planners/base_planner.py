@@ -78,7 +78,7 @@ class AbstractGraphPlanner(AbstractBasePlanner, ABC):
     def _euclidean_dist(self, cur: np.ndarray, goal: np.ndarray):
         return np.sqrt(((goal - cur)**2).sum(-1))
 
-    def decrease_path_resolution(self, plan: List[np.ndarray], skip: int):
+    def drop_path_points(self, plan: List[np.ndarray], skip: int):
         """
         Given a list of coordinates (map or world), drop the coordinates and decrease the resolution of the plan according to scale.
         Note: the path is already in the user resolution of the map. This function will further decrease the resolution.

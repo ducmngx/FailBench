@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import math
 
+from scipy.ndimage import binary_dilation
 
 class Map:
     """
@@ -44,37 +45,49 @@ class Map:
     then get weighted average. if weighted average > 0.5 -> occupied.
     """
 
+    # initialization methods
     def __init__(self, type="grid", init_resolution=100):
-        self.map = None
         self.type = type
         self.init_resolution = self.current_resolution = init_resolution
 
+        # things that should be set later
+        self.raw_map = None
+        self.inflated_map = None
+        self.world_mins = None
+        self.height = None
+        self.width = None
+
     def set_size(self, height, width):
         assert self.type == "grid"
-        self.map = np.zeros((height, width), dtype=bool)
+        self.raw_map = np.zeros((height, width), dtype=bool)
         self.height = height
         self.width = width
 
+    def set_world_mins(self, xmin, ymin):
+        # set it as [[y,x]] for ease of translation in convert_to_world_coordinates
+        # remember, self.raw_map = (H, W)
+        self.world_mins = np.array([[ymin, xmin]]) 
+
+    # Map filling methods
     def set_rect_obstacles(self, x0, y0, x1, y1):
         """
         Set a rectangular obstacle on the map at the init resolution.
         """
         assert self.current_resolution == self.init_resolution
-        self.map[y0:y1, x0:x1] = True
-
-    def change_resolution(self, new_resolution):
-        assert new_resolution <= self.init_resolution
-        self.current_resolution = new_resolution
+        self.raw_map[y0:y1, x0:x1] = True
    
+    # data methods
     def is_cell_occupied(self, x, y):
         """
-        Returns whether the cell at the user resolution is occupied or not.
+        Central method which returns whether the cell at the user resolution is occupied or not.
+        If an inflated map was constructed, the inflated map will be used.
         """
         if x < 0 or y < 0 or x >= self.width*(self.current_resolution/self.init_resolution) or y >= self.height*(self.current_resolution/self.init_resolution):
             raise IndexError
 
+        map_to_extract_from = self.raw_map if self.inflated_map is None else self.inflated_map
         if self.current_resolution == self.init_resolution:
-            return self.map[y, x]
+            return map_to_extract_from[y, x]
         
 
         downscale_ratio = self.init_resolution/self.current_resolution
@@ -99,7 +112,7 @@ class Map:
                 elif upper_diff_y<1:
                     weight *= upper_diff_y
 
-                weighted_sum += int(self.map[y_, x_]) * weight
+                weighted_sum += int(map_to_extract_from[y_, x_]) * weight
                 sum_of_weights += weight
 
         weighted_avg = weighted_sum / sum_of_weights
@@ -127,14 +140,29 @@ class Map:
                     continue
         return neighbors
 
+    # Conversion back to world coordinates
     def convert_to_world_coordinates(self, list_of_points):
         """
-        Given a list of coordinates in the map, convert each coordinate to the environment coordinates.
+        Given a list of coordinates in the map at user (current) resolution, convert each coordinate to the environment coordinates.
         """
+        assert self.world_mins is not None 
         np_points = np.array(list_of_points)
+
+        # scaling back to raw_map resolution
         upscale = self.init_resolution / self.current_resolution
         np_points_upscaled = np_points * upscale
-        return [tuple(x.tolist()) for x in np_points_upscaled] # convert it back to a list of tuples
+
+        # scaling back to world resolution
+        np_points_downscaled = np_points_upscaled / self.init_resolution
+        # translation
+        np_points_translated = np_points_downscaled + np.flip(self.world_mins)
+
+        return [tuple(x.tolist()) for x in np_points_translated] # convert it back to a list of tuples
+
+    # User resolution methods
+    def change_resolution(self, new_resolution):
+        assert new_resolution <= self.init_resolution
+        self.current_resolution = new_resolution
 
     def _create_user_map(self):
         h = int(self.height*(self.current_resolution/self.init_resolution))
@@ -144,7 +172,32 @@ class Map:
             for y in range(h):
                 user_map[y, x] = self.is_cell_occupied(x, y)
         return user_map
-    
+
+    # inflation method
+    def inflate_obstacles(self, mobile_bases_bounding_box, inflation_scaling_factor=1.0, half_sizes=True): 
+        assert len(mobile_bases_bounding_box) == 2
+
+        if half_sizes: # mujoco box type geoms sizes are given as half-length and half-width
+            mobile_bases_bounding_box *= 2
+
+        # find diagonal:
+        # its called inflation radius because the the structure's (circle's) center is marked as an obstacle.
+        # so to get the entire structure to be marked as the obstacle the larger structure must be twice the size of the original structure
+        inflation_radius = np.sqrt(mobile_bases_bounding_box[0]**2 + mobile_bases_bounding_box[1]**2)
+        inflation_radius *= inflation_scaling_factor
+
+        # create circular structure
+        map_resolution_radius = inflation_radius * self.init_resolution
+        center = map_resolution_radius/2
+        X, Y = np.meshgrid(np.arange(int(map_resolution_radius)), np.arange(int(map_resolution_radius))) # indices of the structure
+        dists = np.sqrt((X - center)**2 + (Y - center)**2)
+        map_resolution_struct = dists <= map_resolution_radius/2
+
+        # dilate/inflate the raw_map and create another inflated_map
+        self.inflated_map = binary_dilation(self.raw_map, structure=map_resolution_struct)
+
+
+    # Visualization methods
     def visualize(self):
         fig, ax = plt.subplots(figsize=(8, 8), dpi=75)
         user_map = self._create_user_map()
@@ -184,9 +237,17 @@ class Map:
         # fig.canvas.mpl_connect("motion_notify_event", hover)
         plt.show()
 
-    def visualize_path(self, path):
+    def visualize_path(self, path, type="world_coords"):
+        """
+        Visualize path in current 
+        """
+        if type == "world_coords":
+            path_ = np.array(path)
+            path_ = path_ - np.flip(self.world_mins)
+            path = path_ * self.init_resolution
+
         fig, ax = plt.subplots(figsize=(8, 8), dpi=75)
-        ax.imshow(self.map, cmap="gray_r", origin="lower", interpolation="nearest")
+        ax.imshow(self.raw_map, cmap="gray_r", origin="lower", interpolation="nearest")
         ax.scatter(x=[p[0] for p in path], y=[p[1] for p in path], c="red")
         ax.set_title("Occupancy Map with Floor Outline")
         ax.set_xlabel("X (grid cells)")
@@ -197,6 +258,6 @@ class Map:
 
 
     # def smooth_map(self, iterations=2):
-        # if self.map is not None:
-        #     self.map = binary_closing(self.map, structure=np.ones((3, 3)), iterations=iterations)
-        #     self.label_map = np.where(self.map, self.label_map, 0)
+        # if self.raw_map is not None:
+        #     self.raw_map = binary_closing(self.raw_map, structure=np.ones((3, 3)), iterations=iterations)
+        #     self.label_map = np.where(self.raw_map, self.label_map, 0)
