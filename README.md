@@ -6,6 +6,7 @@ Running `mjpython main.py` runs an A* planner on the kitchen environment to move
 2. **Integrate model_builder**: Jackal is manually put into the environment (see assets/environments/jackal_in_kitchen.xml). We need to integrate the model_builder branch into this code to build up jackal (and other robots) into random environments
 3. **Code clean up**: Code is kind of messy. Methods need to be commented and cleaned. ReadMes need to get updated or deleted.
 4. **Robot Class**: Somewhat related to navigation as currently the jackal's size is manually inputted into the code (see main.py). If we can initialize a jackal object and extract the size from it that would be better. This is related to Task 3 as it would make the platform's code cleaner in general (such as encapsulating mjData).
+5. **Environment Assets**: Clearly we need to include the environment assets. Installing robocasa and generating them dynamically is not ideal. One way is to create all the desired assets and just put it in our codebase. However we should keep our repository small - see [Repository size limits](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github#repository-size-limits).
 
 
 # Unrelated to Navigation
