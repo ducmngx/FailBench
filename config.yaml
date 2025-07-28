@@ -1,16 +1,20 @@
-bodies:
-  - name: cup0
-    pos: 1 -4 1
-    quat: 1 0 0 0
-    xml_path: cup/cup_2/cup_assets.xml
-  - name: jackal
-    pos: 0 0 0
-    quat: 1 0 0 0
-    bodies:
-      - name: hokuyo
-        pos: 0 0 0.1
-        xml_path: hokuyo/hokuyo_2/hokuyo_assets.xml
-        #type: lidar
-      - name: zed
-        pos: 0.2 0 0.15
-        #type: camera
+model_name: testEnvironment1
+env_path: dumped_kitchen.xml
+robot:
+   name: panda
+   xml_path: panda.xml
+   pos: 2 -4 0.85
+   quat: 1 0 0 0
+   #bodies:
+   #   - name: hokoyu_ust10
+   #     pos: 0.120 0 0.184
+   #    xml_path: assets/models/sensors/hokuyo_ust10.xml
+   #     #type: lidar
+   #   - name: zed
+   #     pos: 0.2 0 0.15
+   #     #type: camera
+#Objects:
+#  - name: cup0
+#    pos: 1 -4 1
+#    quat: 1 0 0 0
+#    xml_path: cup/cup_2/model.xml
