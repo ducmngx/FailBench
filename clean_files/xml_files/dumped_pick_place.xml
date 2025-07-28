@@ -1,0 +1,139 @@
+<mujoco model="base">
+  <compiler angle="radian" meshdir="meshes/"/>
+
+  <option impratio="20" density="1.2" viscosity="2e-05" cone="elliptic"/>
+
+  <size njmax="5000" nconmax="5000"/>
+
+  <visual>
+    <map znear="0.001"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.9 0.9 1" rgb2="0.2 0.3 0.4" width="256" height="1536"/>
+    <texture type="2d" name="texplane" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/light-gray-floor-tile.png"/>
+    <texture type="cube" name="tex-steel-brushed" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/steel-brushed.png"/>
+    <texture type="2d" name="tex-light-gray-plaster" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/light-gray-plaster.png"/>
+    <texture type="2d" name="tex-light-wood" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/light-wood.png"/>
+    <texture type="2d" name="tex-dark-wood" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/dark-wood.png"/>
+    <texture type="2d" name="Milk_tex-ceramic" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/ceramic.png"/>
+    <texture type="2d" name="Bread_tex-bread" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/bread.png"/>
+    <texture type="2d" name="Cereal_tex-cereal" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/cereal.png"/>
+    <texture type="2d" name="Can_tex-can" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/textures/soda.png"/>
+    <material name="floorplane" texture="texplane" texuniform="true" texrepeat="2 2" specular="0" shininess="0" reflectance="0.01"/>
+    <material name="table_legs_metal" texture="tex-steel-brushed" shininess="0.8" reflectance="0.8"/>
+    <material name="walls_mat" texture="tex-light-gray-plaster" texuniform="true" texrepeat="3 3" specular="0.1" shininess="0.1"/>
+    <material name="light-wood" texture="tex-light-wood" texuniform="true" texrepeat="15 15"/>
+    <material name="dark-wood" texture="tex-dark-wood" texuniform="true" texrepeat="5 5"/>
+    <material name="Milk_ceramic" texture="Milk_tex-ceramic" texuniform="true" reflectance="0.5"/>
+    <material name="Bread_bread" texture="Bread_tex-bread" texuniform="true" texrepeat="15 15" reflectance="0.7"/>
+    <material name="Cereal_cereal" texture="Cereal_tex-cereal" reflectance="0.5"/>
+    <material name="Can_coke" texture="Can_tex-can" texuniform="true" texrepeat="5 5" reflectance="0.7"/>
+    <mesh name="VisualMilk_milk_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/milk.stl" scale="0.9 0.9 0.9"/>
+    <mesh name="VisualBread_bread_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/bread.stl" scale="0.8 0.8 0.8"/>
+    <mesh name="VisualCereal_cereal_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/cereal.stl"/>
+    <mesh name="VisualCan_can_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/can.stl"/>
+    <mesh name="Milk_milk_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/milk.msh" scale="0.9 0.9 0.9"/>
+    <mesh name="Bread_bread_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/bread.stl" scale="0.8 0.8 0.8"/>
+    <mesh name="Cereal_cereal_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/cereal.msh"/>
+    <mesh name="Can_can_mesh" file="C:\Users/amars/anaconda3/envs/robocasa/lib/site-packages/robosuite/models/assets/objects/meshes/can.msh"/>
+  </asset>
+
+  <worldbody>
+    <geom name="floor" size="3 3 0.125" type="plane" group="1" material="floorplane"/>
+    <geom name="wall_leftcorner_visual" size="1.06 1.5 0.01" pos="-1.25 2.25 1.5" quat="0.653281 0.653281 0.270598 0.270598" type="box" contype="0" conaffinity="0" group="1" material="walls_mat"/>
+    <geom name="wall_rightcorner_visual" size="1.06 1.5 0.01" pos="-1.25 -2.25 1.5" quat="0.653281 0.653281 -0.270598 -0.270598" type="box" contype="0" conaffinity="0" group="1" material="walls_mat"/>
+    <geom name="wall_left_visual" size="1.75 1.5 0.01" pos="1.25 3 1.5" quat="0.707107 0.707107 0 0" type="box" contype="0" conaffinity="0" group="1" material="walls_mat"/>
+    <geom name="wall_right_visual" size="1.75 1.5 0.01" pos="1.25 -3 1.5" quat="0.707107 -0.707107 0 0" type="box" contype="0" conaffinity="0" group="1" material="walls_mat"/>
+    <geom name="wall_rear_visual" size="1.5 1.5 0.01" pos="-2 0 1.5" quat="0.5 0.5 0.5 0.5" type="box" contype="0" conaffinity="0" group="1" material="walls_mat"/>
+    <geom name="wall_front_visual" size="3 1.5 0.01" pos="3 0 1.5" quat="0.5 0.5 -0.5 -0.5" type="box" contype="0" conaffinity="0" group="1" material="walls_mat"/>
+    <camera name="frontview" pos="1.6 0 1.45" quat="0.560842 0.430646 0.430646 0.560842"/>
+    <camera name="birdview" pos="-0.2 0 3" quat="0.707107 0 0 0.707107"/>
+    <camera name="agentview" pos="1 0 1.75" quat="0.653098 0.271041 0.271041 0.653098"/>
+    <light pos="1 1 1.5" dir="-0.19245 -0.19245 -0.96225" directional="true" castshadow="false"/>
+    <body name="bin1" pos="0.1 -0.25 0.8">
+      <geom size="0.2 0.25 0.02" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.2 0.25 0.02" type="box" contype="0" conaffinity="0" group="1" material="light-wood"/>
+      <geom size="0.21 0.01 0.05" pos="0 0.25 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.21 0.01 0.05" pos="0 0.25 0.05" type="box" contype="0" conaffinity="0" group="1" material="light-wood"/>
+      <geom size="0.21 0.01 0.05" pos="0 -0.25 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.21 0.01 0.05" pos="0 -0.25 0.05" type="box" contype="0" conaffinity="0" group="1" material="light-wood"/>
+      <geom size="0.01 0.25 0.05" pos="0.2 0 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.01 0.25 0.05" pos="0.2 0 0.05" type="box" contype="0" conaffinity="0" group="1" material="light-wood"/>
+      <geom size="0.01 0.25 0.05" pos="-0.2 0 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.01 0.25 0.05" pos="-0.2 0 0.05" type="box" contype="0" conaffinity="0" group="1" material="light-wood"/>
+      <geom name="bin1_leg1_visual" size="0.01 0.4" pos="0.15 0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+      <geom name="bin1_leg2_visual" size="0.01 0.4" pos="-0.15 0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+      <geom name="bin1_leg3_visual" size="0.01 0.4" pos="-0.15 -0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+      <geom name="bin1_leg4_visual" size="0.01 0.4" pos="0.15 -0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+    </body>
+    <body name="bin2" pos="0.1 0.28 0.8">
+      <geom size="0.2 0.25 0.02" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.2 0.25 0.02" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom size="0.21 0.01 0.05" pos="0 0.25 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.21 0.01 0.05" pos="0 0.25 0.05" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom size="0.2 0.01 0.05" pos="0 0 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.2 0.01 0.05" pos="0 0 0.05" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom size="0.21 0.01 0.05" pos="0 -0.25 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.21 0.01 0.05" pos="0 -0.25 0.05" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom size="0.01 0.25 0.05" pos="0.2 0 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.01 0.25 0.05" pos="0.2 0 0.05" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom size="0.01 0.25 0.05" pos="0 0 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.01 0.25 0.05" pos="0 0 0.05" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom size="0.01 0.25 0.05" pos="-0.2 0 0.05" type="box" rgba="0.5 0.5 0 1"/>
+      <geom size="0.01 0.25 0.05" pos="-0.2 0 0.05" type="box" contype="0" conaffinity="0" group="1" material="dark-wood"/>
+      <geom name="bin2_leg1_visual" size="0.01 0.4" pos="0.15 0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+      <geom name="bin2_leg2_visual" size="0.01 0.4" pos="-0.15 0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+      <geom name="bin2_leg3_visual" size="0.01 0.4" pos="-0.15 -0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+      <geom name="bin2_leg4_visual" size="0.01 0.4" pos="0.15 -0.2 -0.4" type="cylinder" contype="0" conaffinity="0" group="1" material="table_legs_metal"/>
+    </body>
+    <body name="left_eef_target" pos="0 0 -1" mocap="true">
+      <geom name="left_eef_target_box" size="0.05 0.05 0.05" type="box" contype="0" conaffinity="0" group="2" rgba="0.898 0.42 0.435 0.5"/>
+      <geom name="left_eef_target_sphere" size="0.01" contype="0" conaffinity="0" group="2" rgba="0.898 0.42 0.435 0.8"/>
+    </body>
+    <body name="right_eef_target" pos="0 0 -1" mocap="true">
+      <geom name="right_eef_target_box" size="0.05 0.05 0.05" type="box" contype="0" conaffinity="0" group="2" rgba="0.208 0.314 0.439 0.5"/>
+      <geom name="right_eef_target_sphere" size="0.01" contype="0" conaffinity="0" group="2" rgba="0.208 0.314 0.439 0.8"/>
+    </body>
+    <body name="VisualMilk_main" pos="0.0025 0.1575 0.885">
+      <geom name="VisualMilk_g0" type="mesh" contype="0" conaffinity="0" group="1" mass="0" rgba="0.8 0.8 0.8 0.3" mesh="VisualMilk_milk_mesh"/>
+      <site name="VisualMilk_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="VisualBread_main" pos="0.1975 0.1575 0.845">
+      <geom name="VisualBread_g0" type="mesh" contype="0" conaffinity="0" group="1" mass="0" rgba="0.8 0.8 0.8 0.3" mesh="VisualBread_bread_mesh"/>
+      <site name="VisualBread_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="VisualCereal_main" pos="0.0025 0.4025 0.9">
+      <geom name="VisualCereal_g0" type="mesh" contype="0" conaffinity="0" group="1" mass="0" rgba="0.8 0.8 0.8 0.3" mesh="VisualCereal_cereal_mesh"/>
+      <site name="VisualCereal_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="VisualCan_main" pos="0.1975 0.4025 0.86">
+      <geom name="VisualCan_g0" type="mesh" contype="0" conaffinity="0" group="1" mass="0" rgba="0.8 0.8 0.8 0.3" mesh="VisualCan_can_mesh"/>
+      <site name="VisualCan_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="Milk_main" pos="0.059008 -0.19659 0.885" quat="-0.487302 0 0 0.873233">
+      <joint name="Milk_joint0" type="free" limited="false" actuatorfrclimited="false" damping="0.0005"/>
+      <geom name="Milk_g0" type="mesh" condim="4" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" rgba="0.5 0 0 1" mesh="Milk_milk_mesh"/>
+      <geom name="Milk_g0_visual" type="mesh" contype="0" conaffinity="0" condim="4" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" mass="0" material="Milk_ceramic" mesh="Milk_milk_mesh"/>
+      <site name="Milk_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="Bread_main" pos="0.10437 -0.241779 0.845" quat="-0.684737 0 0 0.72879">
+      <joint name="Bread_joint0" type="free" limited="false" actuatorfrclimited="false" damping="0.0005"/>
+      <geom name="Bread_g0" type="mesh" condim="4" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="50" rgba="0.5 0 0 1" mesh="Bread_bread_mesh"/>
+      <geom name="Bread_g0_visual" type="mesh" contype="0" conaffinity="0" condim="4" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" mass="0" material="Bread_bread" mesh="Bread_bread_mesh"/>
+      <site name="Bread_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="Cereal_main" pos="0.0433327 -0.17823 0.9" quat="0.667956 0 0 0.744201">
+      <joint name="Cereal_joint0" type="free" limited="false" actuatorfrclimited="false" damping="0.0005"/>
+      <geom name="Cereal_g0" type="mesh" condim="4" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="150" rgba="0.5 0 0 1" mesh="Cereal_cereal_mesh"/>
+      <geom name="Cereal_g0_visual" type="mesh" contype="0" conaffinity="0" condim="4" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" mass="0" material="Cereal_cereal" mesh="Cereal_cereal_mesh"/>
+      <site name="Cereal_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+    <body name="Can_main" pos="0.0308283 -0.0598818 0.86" quat="0.794125 0 0 0.607754">
+      <joint name="Can_joint0" type="free" limited="false" actuatorfrclimited="false" damping="0.0005"/>
+      <geom name="Can_g0" type="mesh" condim="4" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" rgba="0.5 0 0 1" mesh="Can_can_mesh"/>
+      <geom name="Can_g0_visual" type="mesh" contype="0" conaffinity="0" condim="4" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" mass="0" material="Can_coke" mesh="Can_can_mesh"/>
+      <site name="Can_default_site" pos="0 0 0" size="0.002" rgba="1 0 0 0"/>
+    </body>
+  </worldbody>
+</mujoco>
