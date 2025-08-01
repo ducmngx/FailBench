@@ -41,3 +41,30 @@ conda env create -f environment.yml
 - Python 3.10
 
 All other required packages will be installed automatically when setting up the environment using `environment.yml`.
+
+
+---
+
+## 🙏 Acknowledgments
+
+This project is inspired by and builds upon the excellent work of existing simulation platforms such as:
+
+- [RoboCasa](https://robocasa.ai/)
+- [Robosuite](https://robosuite.ai/)
+
+We extend their design philosophies and modular stacks to focus specifically on simulating and understanding robotic failures.
+
+
+---
+
+## 📚 Citation
+
+If you use this project or find it helpful, please consider citing the foundational work we build upon:
+
+```bibtex
+@inproceedings{[FAILBENCH2025],
+  title={TBA},
+  author={Duc M. Nguyen, Saad Ghani, Andrew Marshall, Allision Andreyev, and Xuesu Xiao},
+  booktitle={TBA},
+  year={2025}
+}
