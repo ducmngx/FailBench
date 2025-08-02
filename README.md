@@ -68,3 +68,9 @@ If you use this project or find it helpful, please consider citing the foundatio
   booktitle={TBA},
   year={2025}
 }
+
+---
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
+
