@@ -4,7 +4,7 @@ import os
 import mujoco
 from mujoco.viewer import launch
 
-
 model = mujoco.MjModel.from_xml_path("output.xml")
 data = mujoco.MjData(model)
+
 launch(model, data)
