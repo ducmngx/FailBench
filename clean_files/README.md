@@ -1,4 +1,4 @@
-# [Model Name] Documentation
+# FailBench [Merged Files] Documentation
 
 ## Overview
 
@@ -93,3 +93,4 @@ This repository contains files related to robotics simulations using MuJoCo envi
 ## Contributions:
 
 ---
+
