@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import trimesh
 fig, ax = plt.subplots(figsize=(8, 8), dpi=75)
 
-class Mapper:
+class CollisionMapper:
 
     x = ["front", "left", "right", "main", "island"]
     y = ["1", "2", "3"]
@@ -207,7 +207,7 @@ xml_str = env.sim.model.get_xml()
 mjmodel = mujoco.MjModel.from_xml_string(xml_str)
 mjdata = mujoco.MjData(mjmodel)
 
-mapper = Mapper(mjmodel, mjdata, xml_str, static_scale=100, robot_max_height=5)
+mapper = CollisionMapper(mjmodel, mjdata, xml_str, static_scale=100, robot_max_height=5)
 ax.imshow(mapper.get_map(), cmap="gray_r", origin="lower", interpolation="nearest")
 ax.set_title("Occupancy Map with Floor Outline")
 ax.set_xlabel("X (grid cells)")
@@ -266,4 +266,5 @@ def on_key(event):
 
 fig.canvas.mpl_connect("motion_notify_event", hover)
 fig.canvas.mpl_connect("key_press_event", on_key)
+
 plt.show()
