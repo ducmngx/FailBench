@@ -4,6 +4,7 @@ import copy
 import os
 import re
 
+# Returns deep copy of body in XML, using passed in name
 def find_body_by_name(xml_root, target_name=None):
     if target_name is not None:
         for body in xml_root.findall(".//body"):
@@ -15,6 +16,7 @@ def find_body_by_name(xml_root, target_name=None):
             return copy.deepcopy(body)
     return None
 
+# Collects all asset tags in XML
 def collect_assets(xml_root):
     assets = []
     for assets_tag in xml_root.findall(".//asset"):
@@ -22,6 +24,7 @@ def collect_assets(xml_root):
             assets.append(copy.deepcopy(child))
     return assets
 
+# Collects all defaults in XML
 def collect_defaults(xml_root):
     top_defaults = xml_root.find('default')
     if top_defaults is None:
@@ -33,6 +36,7 @@ def collect_defaults(xml_root):
             collected.append(copy.deepcopy(child))
     return collected
 
+# Collects all tendons in XML
 def collect_tendons(xml_root):
     tendons = []
     for tendons_tag in xml_root.findall(".//tendon"):
@@ -40,6 +44,7 @@ def collect_tendons(xml_root):
             tendons.append(copy.deepcopy(child))
     return tendons
 
+# Collects all equalities in XML
 def collect_equalities(xml_root):
     equalities = []
     for equalities_tag in xml_root.findall(".//equality"):
@@ -47,12 +52,14 @@ def collect_equalities(xml_root):
             equalities.append(copy.deepcopy(child))
     return equalities
 
+# Updates body's pose and quaternion rotation if specified in YAML
 def update_body_pose(body_elem, yaml_entity):
     if "pos" in yaml_entity:
         body_elem.set("pos", str(yaml_entity["pos"]))
     if "quat" in yaml_entity:
         body_elem.set("quat", str(yaml_entity["quat"]))
 
+# Process all the assets/defaults/sensors/etc. in an XML file
 def process_entity(entity):
     xml_path = entity["xml_path"]
     assert os.path.exists(xml_path), f"{xml_path} not found"
@@ -90,17 +97,16 @@ def process_entity(entity):
 
     return body, assets, defaults, sensors, tendons, equalities, actuators
 
+# Formats XML for correct indentation, tag sequence, and spacing
 def pretty_print_xml(elem):
     ET.indent(elem, space="  ", level=0)
     xml_str = ET.tostring(elem, encoding="unicode")
 
-    # Each tag on its own line
     xml_str = xml_str.replace('><', '>\n<')
 
     for tag in ['asset', 'default', 'worldbody', 'sensor', 'tendon', 'equality', 'actuator']:
         xml_str = xml_str.replace(f'</{tag}>', f'</{tag}>\n')
 
-    # Add blank lines between <body> tags inside <worldbody>
     match = re.search(r'(<worldbody>.*?</worldbody>)', xml_str, re.DOTALL)
     if match:
         wb_block = match.group(1)
