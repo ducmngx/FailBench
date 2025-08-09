@@ -1,96 +1,175 @@
-# FailBench [Merged Files] Documentation
+# FailBench [Merge Files] Documentation
 
-## Overview
+Builds a complete MuJoCo XML by composing robots and objects from per-entity XMLs, driven by a YAML config. Also includes utilities to load environments, generate collision maps, and programmatically build models.
 
-This repository contains files related to robotics simulations using MuJoCo environments and robotic arms (specifically the Panda robotic arm). The files include XML configurations for simulations, Python scripts for environment management, and YAML configuration files for easier parameter adjustments.
+## Repo structure
 
----
+```
+.
+├── config.yaml                  # Scene recipe used by merge_xml.py
+├── merge_xml.py                 # XML composer and pretty-printer
+├── load_env.py                  # Loader and runner for generated envs
+├── model_builder.py             # Programmatic MJCF construction helpers
+├── collision_map_generator.py   # 3D scene to 2D obstacle grid mapper
+└── assets/                      # Meshes, textures, materials
+```
 
-## Files and Their Descriptions:
+## What each file does
 
-### XML Files
+### `merge_xml.py`
 
-#### 1. `dumped_kitchen.xml`
+Composes a full MuJoCo model from modular XML parts described in `config.yaml`, then writes `output.xml`.
 
-* **Description:**
-  Defines a highly detailed simulated kitchen environment using MuJoCo XML format. It contains various textures, materials, and 3D objects typically found in a kitchen, such as appliances, furniture, and decor elements. This file acts as a complete virtual kitchen scene for robotics experiments.
+Key capabilities:
 
-#### 2. `dumped_pick_place.xml`
+* Parses an environment include via `<include file=...>` and inserts it under the root.
+* Locates a target `<body name="...">` in each entity XML, deep-copies it, and applies optional `pos` and `quat` from YAML.
+* Recursively attaches child bodies for hierarchical assemblies.
+* Collects and de-duplicates global sections: `<asset>`, `<default>`, `<sensor>`, `<tendon>`, `<equality>`, `<actuator>`.
+* Orders sections and pretty-prints the final XML with consistent spacing and blank lines between sibling bodies.
 
-* **Description:**
-  Configures a simple pick-and-place environment. It includes textures, floor, walls, and predefined meshes of objects commonly used in robotics manipulation tasks such as milk cartons, cereal boxes, bread, and soda cans. This environment is tailored for basic robotic manipulation experiments and testing object grasping.
+Important functions:
 
-#### 3. `panda.xml`
+* `find_body_by_name(xml_root, target_name)` returns a deep copy of a matching `<body>`. If no name is given, falls back to the first `<worldbody>/<body>`.
+* `collect_assets|collect_defaults|collect_tendons|collect_equalities(...)` gather global tags from an entity XML.
+* `update_body_pose(body_elem, yaml_entity)` sets `pos` and `quat` from YAML if present.
+* `process_entity(entity)` returns the `<body>` subtree plus all collected globals for that entity and its nested children.
+* `pretty_print_xml(elem)` normalizes indentation, inserts newlines, and ensures consistent block spacing.
 
-* **Description:**
-  Represents the Panda robotic arm model in MuJoCo XML format. It defines both visual and collision meshes, joints, materials, and other physical properties for the Panda robotic manipulator. It's typically included in simulations to provide realistic robot interaction with the environment.
+Output:
 
-#### 4. `output.xml`
+* Writes `output.xml` in the project root.
 
-* **Description:**
-  Combines the kitchen environment (`dumped_kitchen.xml`) with the Panda robotic arm (`panda.xml`) into a unified simulation environment named `testEnvironment1`. It includes default configurations for robot control parameters and additional mesh assets to complete the integrated simulation setup.
+### `load_env.py`
 
----
+Utilities to load and run the generated model.
 
-### Python Files
+* Loads `output.xml` or a given MJCF path into MuJoCo or a wrapper such as mujoco-python or robosuite.
+* Can be used to sanity check model validity, visualize the scene, and verify that assets resolve.
 
-#### 1. `generate_map.py`
+Typical usage:
 
-* **Description:**
-  This script generates a navigational or interaction map from simulation data, useful for visualizing or processing the layout and interactions within the simulated environment. Often used in simulations involving spatial mapping or robot navigation.
+```bash
+python load_env.py --model output.xml
+```
 
-#### 2. `get_env.py`
+### `model_builder.py`
 
-* **Description:**
-  Loads and sets up the specified MuJoCo environment using XML configuration files. It typically manages initialization routines, environment configurations, and possibly interactions with the robot defined in the environment.
+Programmatic model construction helpers.
 
-#### 3. `separate_xml_files.py`
+* Builds MJCF elements in Python without starting from a hand-authored XML.
+* Useful for templating robots and scene objects, generating parametrized variants, and emitting partial XMLs that you can later compose with `merge_xml.py`.
 
-* **Description:**
-  Splits or organizes XML files, making it easier to maintain modular XML components such as separate environments and robot definitions. Useful for structuring and organizing large XML files into smaller, manageable units.
+Typical usage:
 
-#### 4. `test-simulate.py`
+```bash
+python model_builder.py --out entity.xml --name cube --size 0.05
+```
 
-* **Description:**
-  Runs a test simulation based on provided XML configuration files and additional parameters. Typically, this script executes the simulation, controls the robotic manipulator, and collects simulation data for evaluation or analysis.
+### `collision_map_generator.py`
 
----
+Generates a 2D collision or occupancy grid from a 3D MuJoCo scene.
 
-### YAML Files
+* Parses `output.xml`, reads body and geom placement, and rasterizes into a grid for planning.
+* Supports exporting a matrix representation suitable for A\*, Dijkstra, BFS, or RRT.
 
-#### 1. `config.yaml`
+Typical usage:
 
-* **Description:**
-  Provides simplified access to configurable parameters for setting up the simulation environment. It specifies:
+```bash
+python collision_map_generator.py --model output.xml --res 0.02 --out obstacles.npy
+```
 
-  * Environment model name (`testEnvironment1`).
-  * Environment file path (`dumped_kitchen.xml`).
-  * Robot configuration (Panda robotic arm) including XML path, position, orientation, and commented examples for adding sensors and additional objects.
+## `config.yaml` schema
 
----
+Minimal example:
 
-## How to Use:
+```yaml
+model_name: kitchen_scene
+env_path: envs/base_env.xml
 
-* **Environment Setup:**
-  Modify `config.yaml` to set up your desired environment and robot settings.
+robot:
+  name: panda
+  xml_path: robots/franka_panda.xml
+  pos: "0 0 0"
+  quat: "1 0 0 0"
+  bodies:
+    - name: gripper
+      xml_path: robots/panda_gripper.xml
 
-* **Running Simulations:**
-  Execute `test-simulate.py` to start a simulation using MuJoCo environments.
+Objects:
+  - name: table
+    xml_path: objects/table.xml
+    pos: "0.8 0.0 0.0"
+    quat: "1 0 0 0"
 
-* **Customizing XML Files:**
-  Edit XML files (`dumped_kitchen.xml`, `dumped_pick_place.xml`, and `panda.xml`) to customize the simulated scenes or robot configurations.
+  - name: mug
+    xml_path: objects/mug.xml
+    pos: "0.7 0.1 0.75"
+```
 
----
+Fields:
 
-## Dependencies:
+* `model_name`: Name applied to the root `<mujoco>` tag.
+* `env_path`: Base environment XML that gets included under the root. Usually defines compiler defaults and world settings.
+* `robot`: One entity describing the robot assembly. Supports nested `bodies` for multi-part robots.
+* `Objects`: List of scene objects. Each entry:
 
-* MuJoCo simulation software
-* Robosuite (optional, depending on your specific simulation setup)
-* Python environment with necessary libraries (`numpy`, `PyYAML`, etc.)
+  * `name`: The `<body name="...">` to extract from the source XML.
+  * `xml_path`: Path to the source MJCF containing that body.
+  * `pos` and `quat` optional overrides for placement.
+  * `bodies`: Optional nested entities that will be appended as children of this body.
 
----
+Notes:
 
-## Contributions:
+* `merge_xml.py` searches for `<body name="...">`. If `name` is omitted, it will take the first `<worldbody>/<body>` in that XML.
+* Global sections from all entities are merged. Assets are de-duplicated by serialized element text.
 
----
+## How the build works
 
+1. Read `config.yaml`.
+2. Create the root `<mujoco model=...>` and add:
+
+   * `<compiler meshdir="assets">`
+   * `<include file=env_path>`
+3. For each entity in `robot` and `Objects`:
+
+   * Parse the entity XML.
+   * Extract the target body subtree, apply `pos` and `quat`, and recurse into `bodies`.
+   * Accumulate global sections for assets, defaults, sensors, tendons, equalities, actuators.
+4. Insert merged `<default>`, `<asset>`, and `<worldbody>` in that order, then append `<sensor>`, `<tendon>`, `<equality>`, `<actuator>` if present.
+5. Pretty-print and write `output.xml`.
+
+## Usage
+
+Generate the model:
+
+```bash
+python merge_xml.py
+```
+
+Load and inspect:
+
+```bash
+python load_env.py --model output.xml
+```
+
+Create a collision map:
+
+```bash
+python collision_map_generator.py --model output.xml --res 0.02 --out obstacles.npy
+```
+
+Programmatically build an entity, then compose:
+
+```bash
+python model_builder.py --out objects/custom_block.xml --name block --size 0.1
+# add it to config.yaml under Objects, then:
+python merge_xml.py
+```
+
+## Troubleshooting
+
+* Ensure `assets/` contains all meshes and textures referenced by any entity XML. The root compiler sets `meshdir="assets"`.
+* If an entity XML lacks a matching `<body name="...">`, the script will raise an error. Check `name` and source XML.
+* Defaults handling: only nested `<default>` children under the top-level `<default>` are collected.
+* Asset de-duplication uses raw XML string equality. If two assets differ in attribute order or whitespace, they will be treated as distinct. Normalize upstream if needed.
