@@ -12,6 +12,7 @@ class CollisionMapper:
     x = ["front", "left", "right", "main", "island"]
     y = ["1", "2", "3"]
 
+    # Defines geom keywords which will not be included into the 2D collision mpap
     SKIP_KEYWORDS = [
         "room_g0", "front_group_g0",
         *[("toaster_" + i + "_group_g") for i in x],
@@ -56,6 +57,7 @@ class CollisionMapper:
         "_left_group_1_door_door"
     ]
 
+    # Initializes class; sets IVs and creates 2D collision map
     def __init__(self, mjmodel, mjdata, xml_string, static_scale=100, robot_max_height=5, floor_padding = 1):
         self.mjmodel = mjmodel
         self.mjdata = mjdata
@@ -70,6 +72,7 @@ class CollisionMapper:
 
         self._compute_bounds_and_fill_maps()
 
+    # Identifies all mesges present in XML and compiles into a dictionary
     def parse_mesh_files_from_xml(self, xml_string):
         mesh_dict = {}
         root = ET.fromstring(xml_string)
@@ -79,7 +82,8 @@ class CollisionMapper:
             if name and file:
                 mesh_dict[name] = file
         return mesh_dict
-    
+
+    # Extracts mesh vertices and calculates XYZ bounds for collision mapping
     def extract_mesh_bounds(self, mesh_name):
         if mesh_name not in self.mesh_files:
             print(f"Mesh '{mesh_name}' not found in model.")
@@ -100,13 +104,15 @@ class CollisionMapper:
         except Exception as e:
             print(f"Error loading mesh '{mesh_name}': {e}")
             return None
-        
+
+    # Identifies whether a geom present in the XML should be added to the 2D Collison map
     def _should_include_geom(self, name):
         if not name:
             return False
         name = name.lower()
         return any(kw in name for kw in self.SKIP_KEYWORDS) or ("stack_" in name and any(kw in name for kw in self.STACK_KEYWORDS))
-    
+
+    # Iterates through XML, adding all geoms and their necessary attributes to an array
     def _collect_geoms(self):
         mujoco.mj_forward(self.mjmodel, self.mjdata)
         geoms_info = []
@@ -138,7 +144,8 @@ class CollisionMapper:
             }
             geoms_info.append(info)
         return geoms_info
-    
+
+    # Parses list of geoms and meshes, maps onto 2d boolean matrix
     def _compute_bounds_and_fill_maps(self):
         xs, ys = [], []
         self.patches = []
@@ -195,6 +202,7 @@ class CollisionMapper:
     def get_map(self):
         return self.map
 
+# Visualization for 2D Collison map
 from robocasa.environments.kitchen.kitchen import Kitchen
 
 env = Kitchen(
@@ -219,6 +227,8 @@ annot = ax.annotate("", xy=(0,0), xytext=(10,10), textcoords="offset points",
                     bbox=dict(boxstyle="round", fc="w"),
                     arrowprops=dict(arrowstyle="->"))
 annot.set_visible(False)
+
+# The following methods are purely for visualization purposes. They make the collision map interactive through mouse hovers and storing geom names in the 2D map
 
 def update_annot(rect, name, event):
     annot.xy = (event.xdata, event.ydata)
@@ -268,3 +278,4 @@ fig.canvas.mpl_connect("motion_notify_event", hover)
 fig.canvas.mpl_connect("key_press_event", on_key)
 
 plt.show()
+
