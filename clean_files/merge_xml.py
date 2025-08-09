@@ -9,7 +9,8 @@ import copy
 import os
 import re
 
-class SimpleXMLSeparator:    
+# Separates environment and robot XML bodies
+class XMLSeparator:    
     def __init__(self, scene_xml_path: str, robot_xml_path: str):
 
         self.scene_xml_path = scene_xml_path
@@ -23,9 +24,9 @@ class SimpleXMLSeparator:
         print(f"Robot: {self.robot_model.ngeom} geoms, {self.robot_model.njnt} joints")
         
         self.robot_names = self._get_robot_component_names()
-        
         self.separation = self._separate_components()
-    
+
+    # Identifies and stores all present bodies, geoms, and joints in the robot
     def _get_robot_component_names(self) -> Dict[str, Set[str]]:
         names = {
             'bodies': set(),
@@ -51,7 +52,8 @@ class SimpleXMLSeparator:
         
         print(f"Robot components: {len(names['bodies'])} bodies, {len(names['geoms'])} geoms, {len(names['joints'])} joints")
         return names
-    
+        
+    # Separates scene's bodies between those attributed to robot & those attributed to environment
     def _separate_components(self) -> Dict[str, List[int]]:
         separation = {
             'robot_bodies': [],
@@ -102,7 +104,8 @@ class SimpleXMLSeparator:
                 separation['environment_joints'].append(joint_id)
 
         return separation
-    
+
+    # Checks whether a geom can collide with the robot
     def _is_collision_geom(self, geom_id: int) -> bool:
         group = self.scene_model.geom_group[geom_id]
         
@@ -110,32 +113,38 @@ class SimpleXMLSeparator:
             return False
         
         return True
-    
+
+    # Returns all geoms attributed to robot
     def get_robot_geoms(self, collision_only: bool = True) -> List[int]:
         if collision_only:
             return self.separation['robot_collision_geoms']
         else:
             return self.separation['robot_geoms']
-    
+
+    # Returns all geoms attributed to the environment
     def get_environment_geoms(self, collision_only: bool = True) -> List[int]:
         if collision_only:
             return self.separation['environment_collision_geoms']
         else:
             return self.separation['environment_geoms']
-    
+
+    # Returns all joints attributed to robot
     def get_robot_joints(self) -> List[int]:
         return self.separation['robot_joints']
-    
+
+    # Returns all joints attributed to the environment
     def get_environment_joints(self) -> List[int]:
         return self.separation['environment_joints']
-    
+
+    # Returns all joint indices for robot joints
     def get_robot_joint_indices(self) -> List[int]:
         indices = []
         for joint_id in self.get_robot_joints():
             qpos_addr = self.scene_model.jnt_qposadr[joint_id]
             indices.append(qpos_addr)
         return sorted(indices)
-    
+
+    # Returns a collision pair, consisting of one colliding robot & environment geom
     def get_collision_pairs(self) -> List[Tuple[List[int], List[int]]]:
         robot_collision = self.get_robot_geoms(collision_only=True)
         env_collision = self.get_environment_geoms(collision_only=True)
@@ -146,7 +155,8 @@ class SimpleXMLSeparator:
             pairs.append((robot_collision, env_collision))
         
         return pairs
-    
+
+    # Configures robot joint indices
     def set_robot_configuration(self, robot_config: np.ndarray):
         robot_joint_indices = self.get_robot_joint_indices()
         
@@ -157,7 +167,8 @@ class SimpleXMLSeparator:
             self.scene_data.qpos[qpos_idx] = robot_config[i]
         
         mujoco.mj_forward(self.scene_model, self.scene_data)
-    
+
+    # Debug: outputs all separation data
     def print_separation_report(self):
         print("\n" + "="*70)
         print("SIMPLE XML SEPARATION REPORT")
@@ -208,7 +219,8 @@ class SimpleXMLSeparator:
         
         if len(robot_joints) > 10:
             print(f"      ... and {len(robot_joints)-10} more")
-    
+
+    # Debug: tests collison between collision pairs in MujoCo
     def test_collision_detection(self):
         collision_pairs = self.get_collision_pairs()
         
@@ -237,7 +249,8 @@ class SimpleXMLSeparator:
                     collisions += 1
 
             print(f"    Found {collisions} contacts")
-    
+
+    # Debug: outputs all robot's body, geom, and joint names
     def debug_name_matching(self):
         print(f"\n" + "="*50)
         print("DEBUG: NAME MATCHING")
@@ -263,13 +276,14 @@ class SimpleXMLSeparator:
                 status = "ROBOT" if is_robot else "ENVIRONMENT"
                 print(f"  '{body_name}' -> {status}")
 
+# Debug method for checking separated geoms/joints/bodies
 class RunTest:
     def __init__(self, scene_xml, robot_xml):
         try:
-            print("SIMPLE XML SEPARATOR TEST")
+            print("XML SEPARATOR TEST")
             print("=" * 50)
             
-            separator = SimpleXMLSeparator(scene_xml, robot_xml)
+            separator = XMLSeparator(scene_xml, robot_xml)
             
             separator.debug_name_matching()
             separator.print_separation_report()
@@ -297,8 +311,10 @@ class RunTest:
         except Exception as e:
             print(f"❌ Error: {e}")
 
+# Merges separated XMLs into joint scene environment
 class MergeXML:
 
+    # Initiates necessary variables
     def __init__(self):
 
         with open('config.yaml', 'r') as f:
@@ -365,6 +381,7 @@ class MergeXML:
         with open("output.xml", "w") as f:
             f.write(formated_xml)
 
+    # Locates and returns a deep copy of a body given the bodies name
     def find_body_by_name(self, xml_root, target_name=None):
         if target_name is not None:
             for body in xml_root.findall(".//body"):
@@ -375,7 +392,8 @@ class MergeXML:
             for body in worldbody.findall("body"):
                 return copy.deepcopy(body)
         return None
-    
+
+    # Collects default data in XML
     def collect_defaults(self, xml_root):
         top_defaults = xml_root.find('default')
         if top_defaults is None:
@@ -385,34 +403,39 @@ class MergeXML:
             if child.tag == "default":
                 collected.append(copy.deepcopy(child))
         return collected
-    
+
+    # Collects all tendons in XML
     def collect_tendons(self, xml_root):
         tendons = []
         for tendons_tag in xml_root.findall(".//tendon"):
             for child in tendons_tag:
                 tendons.append(copy.deepcopy(child))
         return tendons
-    
+
+    # Collects all equalities in XML
     def collect_equalities(self, xml_root):
         equalities = []
         for equalities_tag in xml_root.findall(".//equality"):
             for child in equalities_tag:
                 equalities.append(copy.deepcopy(child))
         return equalities
-    
+
+    # Collects all assets in XML
     def collect_assets(self, xml_root):
         assets = []
         for assets_tag in xml_root.findall(".//asset"):
             for child in assets_tag:
                 assets.append(copy.deepcopy(child))
         return assets
-    
+
+    # Updates position & quaternion rotation for objects in which a new pos/quat is defined in config YAML
     def update_body_pose(self, body_elem, yaml_entity):
         if "pos" in yaml_entity:
             body_elem.set("pos", str(yaml_entity["pos"]))
         if "quat" in yaml_entity:
             body_elem.set("quat", str(yaml_entity["quat"]))
 
+    # Collects all assets/defaults/sensors/tendons/etc. from an XML (using a path)
     def process_entity(self, entity):
         xml_path = entity["xml_path"]
         assert os.path.exists(xml_path), f"{xml_path} not found"
@@ -451,7 +474,8 @@ class MergeXML:
             actuators += sub_actuators
 
         return body, assets, defaults, sensors, tendons, equalities, actuators
-    
+
+    # Formats XML spacing, indentation, and tag sequence
     def format_xml(self, elem):
         ET.indent(elem, space="  ", level=0)
         xml_str = ET.tostring(elem, encoding="unicode")
@@ -471,19 +495,24 @@ class MergeXML:
         if not xml_str.endswith('\n'):
             xml_str += '\n'
         return xml_str
-    
+
+    # Returns final XML
     def get_xml(self):
         return "output.xml"
 
+# Debug: creates Merged XML
 class main:
+
+    # Creates a merge XML & runs the scene test
     def __init__(self):
         merge = MergeXML()
 
-        scene_xml = self.rename_geoms_with_mesh(merge.get_pretty_xml(), "_in_scene")
+        scene_xml = self.rename_geoms_with_mesh(merge.get_xml(), "_in_scene")
         robot_xml = self.rename_geoms_with_mesh("panda.xml", "_in_robot")
 
         RunTest(scene_xml, robot_xml)
 
+    # Formats geom names to contain prefix 'collision' if applicable and be numbered sequentially 1 -> n
     def rename_geoms_with_mesh(self, input_file, suffix):
         tree = ET.parse(input_file)
         root = tree.getroot()
@@ -520,5 +549,5 @@ class main:
         xml_str = ET.tostring(root, encoding="unicode")
 
         return xml_str
-
 main()
+
