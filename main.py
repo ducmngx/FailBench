@@ -1,163 +1,124 @@
-import mujoco as mj
-from mujoco.glfw import glfw
 import numpy as np
-import os
-from controllers.diff_drive import DifferentialDriveController
+import mujoco
+import time
+from mujoco import viewer
 
-xml_path = 'simple_world.xml' #xml file (assumes this is in the same folder as this file)
-simend = 500 #simulation time
-print_camera_config = 0 #set to 1 to print camera config
-                        #this is useful for initializing view of the model)
+from planners.mapping.generate_map import Mapper
+from planners.global_planners import A_StarPlanner
 
+from scipy.spatial.transform import Rotation as R
 
-# TODO: set this in a seperate class
-linear_vel = 0
-angular_vel = 0
+def test_planner_on_map():
+    """
+    Testing code for A_StarPlanner, Mapper, and Map.
+    """
+    xml_path = "/Users/saghani/Workspace/Research/GenAISim/assets/environments/dumped_kitchen_noassets.xml"
+    mjmodel = mujoco.MjModel.from_xml_path(xml_path)
+    mjdata = mujoco.MjData(mjmodel)
+    mapper = Mapper(mjmodel, mjdata, xml_path, static_scale=100, robot_max_height=5)
 
-
-_overlay = {}
-def add_overlay(gridpos, text1, text2):
-
-    if gridpos not in _overlay:
-        _overlay[gridpos] = ["", ""]
-    _overlay[gridpos][0] += text1 + "\n"
-    _overlay[gridpos][1] += text2 + "\n"
-
-
-def create_overlay(model, data):
-    global linear_vel, angular_vel
-
-    topleft = mj.mjtGridPos.mjGRID_TOPLEFT
-    topright = mj.mjtGridPos.mjGRID_TOPLEFT
-    bottomleft = mj.mjtGridPos.mjGRID_BOTTOMLEFT
-    bottomright = mj.mjtGridPos.mjGRID_BOTTOMRIGHT
-
+    map = mapper.get_map()
+    # map.visualize()
+    map.change_resolution(5)        # downscale x100/5 (x20)
+    # map.visualize()
+    map.inflate_obstacles(np.array([0.21,0.155])) # inflation is done at the raw_map level so it doesnt matter whether you change resolution first or inflate first.
+    # map.visualize()
     
-    add_overlay(
-        bottomleft,
-        "Time",'%.2f' % data.time,
-         )
 
-    add_overlay(
-        topleft,
-        "Linear Vel. (up/down)",'%.2f' % linear_vel ,
-         )
+    planner = A_StarPlanner(mjmodel, map, heuristic_fn=None)
 
-    add_overlay(
-        topleft,
-        "Angular Vel. (left/right)",'%.2f' % angular_vel,
-         )
+    path = planner.plan(start_pos=np.array([20,5]), end_pos=np.array([20, 50]))
+    # # print(path)
+
+    path_decresed_resolution = planner.decrease_path_resolution(path, 3)
+    # # print(path_decresed_resolution)
+
+    path_env_coords = map.convert_to_world_coordinates(path_decresed_resolution)
+    print(path_env_coords)
+
+    map.visualize_path(path_env_coords)
 
 
-def keyboard(window, key, scancode, act, mods):
-    global linear_vel, angular_vel, controller
+def test(xml_path="/Users/saghani/Workspace/Research/GenAISim/assets/environments/jackal_in_kitchen.xml", speed=0.1):
+    """
+    Play waypoints in MuJoCo viewer.
     
-    if act == glfw.PRESS and key == glfw.KEY_UP:
-        linear_vel += 0.1
-
-    if act == glfw.PRESS and key == glfw.KEY_DOWN:
-        linear_vel -= 0.1
-
-    if act == glfw.PRESS and key == glfw.KEY_LEFT:
-        angular_vel -= 0.5
-
-    if act == glfw.PRESS and key == glfw.KEY_RIGHT:
-        angular_vel += 0.5
+    Args:
+        waypoints: List of 55 joint configurations from your planner
+        xml_path: MuJoCo XML file path
+        speed: Playback speed (higher = faster)
+    """
+    # Load MuJoCo model
+    model = mujoco.MjModel.from_xml_path(xml_path)
+    data = mujoco.MjData(model)
     
-    controller.control(linear_vel, angular_vel)
+    # have to manually put in jackal's dimensions
+    JACKAL_DIMENSIONS = [0.43, 0.508]
+   
+    # the static_scale becomes x2 since generally things in mujoco are 'half_height/length/width' etc.
+    mapper = Mapper(model, data, xml_path, static_scale=100, robot_max_height=5)
+    map = mapper.get_map()
+    map.inflate_obstacles(JACKAL_DIMENSIONS, half_sizes=False)
+    map.change_resolution(10)        # downscale x200/10 (x20)
 
+    planner = A_StarPlanner(model, map, heuristic_fn=None)
+    path = planner.plan(start_pos=np.array([20,5]), end_pos=np.array([20, 50]))
+    path_env_coords = map.convert_to_world_coordinates(path)
+    print(path_env_coords)
 
-#get the full path
-dirname = os.path.dirname(__file__)
-abspath = os.path.join(dirname,"assets", "models", xml_path)
-xml_path = abspath
+    # get jackal body to calculate current pose
+    jackal_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "jackal")
+    jackal_joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "jackal_free_joint")
+    jackal_qpos_adr = model.jnt_qposadr[jackal_joint_id]
 
-# MuJoCo data structures
-model = mj.MjModel.from_xml_path(xml_path)  # MuJoCo model
-data = mj.MjData(model)                # MuJoCo data
-cam = mj.MjvCamera()                        # Abstract camera
-opt = mj.MjvOption()                        # visualization options
+    with viewer.launch_passive(model=model, data=data) as viewer_:
+        # Set nice camera view
+        viewer_.cam.azimuth = 45
+        viewer_.cam.elevation = -20
+        viewer_.cam.distance = 20
+        viewer_.cam.lookat[:] = [0, 0, 0.5]
 
-# Init GLFW, create window, make OpenGL context current, request v-sync
-glfw.init()
-window = glfw.create_window(1200, 900, "Demo", None, None)
-glfw.make_context_current(window)
-glfw.swap_interval(1)
+        
+        while viewer_.is_running():
+            for i, waypoint in enumerate(path_env_coords):
+                if not viewer_.is_running():
+                    break
+                
+                # get robot state information (pos, rotation)
+                cur_pos = data.xpos[jackal_body_id][:2]
+                cur_quat = R.from_matrix(data.xmat[jackal_body_id].reshape(3, 3)).as_quat()
+                r_robot = R.from_quat(cur_quat) # world->robot transformation
 
-# initialize visualization data structures
-mj.mjv_defaultCamera(cam)
-mj.mjv_defaultOption(opt)
-scene = mj.MjvScene(model, maxgeom=10000)
-context = mj.MjrContext(model, mj.mjtFontScale.mjFONTSCALE_150.value)
+                # transform the waypoint into robot frame:
+                direction = waypoint - cur_pos
+                direction = np.append(direction, 0) # adding 0 as the following transformations expect a 3-dimensional vector 
+                r_direction = r_robot.inv().apply(direction)
 
-# install GLFW mouse and keyboard callbacks
-glfw.set_key_callback(window, keyboard)
+                # calculate desired angle in robot frame
+                angle = np.arctan2(r_direction[1], r_direction[0])
+                desired_quat = R.from_euler('z', angle, degrees=False).as_quat()
 
-# Example on how to set camera configuration
-cam.azimuth = 43
-cam.elevation = -48 
-cam.distance =  10
-cam.lookat =np.array([ 0.0 , 0.0 , 0.0 ])
+                # data.qpos[3:7] (the quat. part) due to jackal's mesh messing with its frame, we need to apply the desired quat on top of the current one to
+                # visually achieve the desired quat.
+                r_cur = R.from_quat(cur_quat)
+                r_desired = R.from_quat(desired_quat)
+                composed_quat = (r_cur * r_desired).as_quat()  # still in [x, y, z, w]
 
-# Controller stuff
-jackal_wheel_radius = 0.098
-jackal_width = 0.310
-left_wheel_actuators = data.ctrl[:2]
-right_wheel_actuators = data.ctrl[2:]
+                # converting back to mujoco quat coordinates [w, x, y, z]
+                mj_quat = np.array([composed_quat[3], composed_quat[0], composed_quat[1], composed_quat[2]])
+                data.qpos[jackal_qpos_adr+3:jackal_qpos_adr+7] = mj_quat
 
-controller = DifferentialDriveController(jackal_wheel_radius, jackal_width, left_wheel_actuators, right_wheel_actuators)
-
-
-#set the controller
-# mj.set_mjcb_control(controller)
-
-while not glfw.window_should_close(window):
-    time_prev = data.time
-
-    while (data.time - time_prev < 1.0/60.0):
-        # controller.control(linear_vel, angular_vel)
-        mj.mj_step(model, data)
-        # print(data.ctrl[0],data.ctrl[1],data.ctrl[2],data.ctrl[3])
-
-
-    if (data.time>=simend):
-        break;
-
-    # get framebuffer viewport
-    viewport_width, viewport_height = glfw.get_framebuffer_size(
-        window)
-    viewport = mj.MjrRect(0, 0, viewport_width, viewport_height)
-
-    #create overlay
-    create_overlay(model, data)
-
-    #print camera configuration (help to initialize the view)
-    if (print_camera_config==1):
-        print('cam.azimuth =',cam.azimuth,';','cam.elevation =',cam.elevation,';','cam.distance = ',cam.distance)
-        print('cam.lookat =np.array([',cam.lookat[0],',',cam.lookat[1],',',cam.lookat[2],'])')
-
-    # Update scene and render
-    mj.mjv_updateScene(model, data, opt, None, cam,
-                       mj.mjtCatBit.mjCAT_ALL.value, scene)
-    mj.mjr_render(viewport, scene, context)
-
-    # overlay items
-    for gridpos, [t1, t2] in _overlay.items():
-        mj.mjr_overlay(
-            mj.mjtFontScale.mjFONTSCALE_150,
-            gridpos,
-            viewport,
-            t1,
-            t2,
-            context)
-
-    # clear overlay
-    _overlay.clear()
-
-    # swap OpenGL buffers (blocking call due to v-sync)
-    glfw.swap_buffers(window)
-
-    # process pending GUI events, call GLFW callbacks
-    glfw.poll_events()
-
-glfw.terminate()
+                # Set robot position
+                data.qpos[jackal_qpos_adr:jackal_qpos_adr+2] = waypoint
+                
+                # Update MuJoCo
+                mujoco.mj_forward(model, data)
+                viewer_.sync()
+                
+                # Control playback speed
+                time.sleep(0.1 / speed)
+            
+            print("Animation complete. Restarting...")
+            
+if __name__ == "__main__":
+    test()

@@ -2,8 +2,14 @@
   
   <option gravity="0 0 -9.81" />
 
-  <include file="models/robots/jackal.xml"/>
+  
+  
 
   <include file="environments/dumped_kitchen_noassets.xml"/>
 
+  <worldbody>
+    <body pos="">
+      <include file="models/robots/jackal.xml"/>
+    </body>
+  </worldbody>
 </mujoco>
