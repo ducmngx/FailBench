@@ -4,7 +4,7 @@ import time
 from mujoco import viewer
 
 from planners.mapping.generate_map import Mapper
-from planners.global_planners import A_StarPlanner
+from planner.algorithms.global_planners import A_StarPlanner
 
 from scipy.spatial.transform import Rotation as R
 

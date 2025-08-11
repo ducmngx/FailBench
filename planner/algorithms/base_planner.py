@@ -4,38 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Callable
 
 
-
 from .mapping.map import Map
-
-class _GlobalPlanner:
-
-    """
-    This class is a wrapper around the PMP planners.
-    """
-
-    def __init__(self, type_of_planner: str, name: str, map: np.ndarray, **kwargs_to_planner):
-        assert type_of_planner == "Graph_based" or type_of_planner == "Sampling_based", "Only [Graph_based, Sampling_based] planners are supported"
-        assert name == "A_star" or name == "RRT_star", "Only [A_star, RRT_star] planners are supported"
-        self.type_of_planner = type_of_planner
-        self.name_of_planner = name
-        self.map = map
-
-        self._init_PMP_planner(kwargs_to_planner)
-
-    
-
-    def plan(self, start: tuple, goal:tuple) -> list:
-        pass
-
-    def _convert_to_PMP_format(self):
-        pass
-
-    def _convert_from_PMP_format(self):
-        pass
-    
-    def _init_PMP_planner(self, **kwargs_to_planner):
-        pass
-
 
 class AbstractBasePlanner(ABC):
     """
