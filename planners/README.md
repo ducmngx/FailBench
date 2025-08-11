@@ -1,3 +1,34 @@
+# Navigation
+Running `mjpython main.py` runs an A* planner on the kitchen environment to move the jackal from the start to goal positions. 
+
+### Tasks Left
+1. **Write local planner**: Navigation is done by position only, essentially jackal is jumping. We have a differential driver to move the jackal given linear and angular velocities (see diff_drive_tester.py). We need to write a local planner that uses the diff. driver.
+2. **Integrate model_builder**: Jackal is manually put into the environment (see assets/environments/jackal_in_kitchen.xml). We need to integrate the model_builder branch into this code to build up jackal (and other robots) into random environments
+3. **Code clean up**: Code is kind of messy. Methods need to be commented and cleaned. ReadMes need to get updated or deleted.
+4. **Robot Class**: Somewhat related to navigation as currently the jackal's size is manually inputted into the code (see main.py). If we can initialize a jackal object and extract the size from it that would be better. This is related to Task 3 as it would make the platform's code cleaner in general (such as encapsulating mjData).
+5. **Environment Assets**: Clearly we need to include the environment assets. Installing robocasa and generating them dynamically is not ideal. One way is to create all the desired assets and just put it in our codebase. However we should keep our repository small - see [Repository size limits](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github#repository-size-limits).
+
+
+# Unrelated to Navigation
+## Tasks 
+1. Robot classes need to be created for ease of coding up the platform (encapsulating mjData).
+2. Integrate Camera -> needed for Amir, not necessary for Aaron. 
+3. Write a python wrapper around the rangefinder sensors to take in N amount of sensor values and output a single array that concatenates all the sensor readings. For eg, VLP16 has 360x16 rangefinder sensors. The wrapper should take in the rf_{horizontal}_{vertical} sensor and produce a single array of size (360, 16).
+    - Not urgent as we assume that we have the whole map from mujoco.
+    - Regarding where this file should exist, if we follow robosuite then we can either put all xml/mesh files in an "assets" folder and then have a seperate folder for these wrappers around sensors. Or we can have a utils folder in root and put the wrappers there. Im inclined to the first approach since the wrappers are specific and not general.
+
+
+## Helpful things to know
+- mujoco can load urdf files with minimal changes. However its better to convert a URDF file to a mujoco xml file via `./compile /path/to/model.urdf /path/to/mujuco_model.xml`. 
+    - References:
+        - https://mujoco.readthedocs.io/en/stable/modeling.html#modeling
+        - https://github.com/robotlearning123/dual_ur5_husky_mujoco/tree/dual_ur5_husky_mujoco
+- Parallel Training:
+    - "On a side note, what we are doing here w Hopkins is I’m building the jackal and set up 90 house environments (matterport 3d). They plan to train with IsaacLab, which should allow thousands if episodes a second with parallel envs. In the future, if we plan to do training, we should take advantage of that too"
+
+
+
+
 # Planners
 
 Saad files:
@@ -27,42 +58,3 @@ There are two files:
 - generate_map
 
 generate_map contructs a map.Map object that is essentially a 2d boolean mask of the same size as the environment but in cm (Mujoco env. is defined in meters). map.Map offers many helper methods for planning such as changing the size of the user resolution so graph planning does not happen over every grid cell. See global_planners.test() for example. 
-
-
-
-## Rough sketch of what needs to be done
-1. Get all geoms and make a 2d occupancy map. Some details:
-    - the plane will be the entire 2d map, it shouldnt count as an obstacle.  (Done)
-        - Confirm with andrew that many (if not all) environments have a geom of type plane as the ground. Update: Andrew has said that robocasa uses a box type for the ground but the size is available explicitly via python objects. Not sure if its available in XML.
-    - all geoms except plane and the geoms of the robot will be obstacles. This should take into account the shape of the geoms and basically whatever their collision boxes are.
-        - another exceptional case are invisible geoms or whatever geoms that dont participate in collision checking according to mujoco
-        - the algorithm should be as efficient as possible. for eg, if there are overlapping geoms then dont run the algorithm twice.
-2. Details of the Occupancy map data structure: (Done)
-    - take inspiration from ROS move base occupancy map?
-    - resolution doesnt have to be fixed, can be finer grained nearer obstacles (i forgot what this is called) so that circular geoms can be accurately depicted.
-    - Get origin from mujoco
-
-## Simple timeline (Done)
-1. Assume fixed, very small resolution - 0.01m and make the map based on plane.
-    - Get map size from XML -> geom name="floor_room_g0", type="box"
-2. Write the algorithm simply covering geom type="box" only.
-3. Repeat step 2, making the algorithm faster while covering more types that are in the robocasa environment. One important milestone is being able to take into account meshes
-4. ~~Finally we can integrate dynamic resolution mapping if needed.~~
-
-
-<!-- ## After completion of a discrete fixed resolution map
-1. We want a continuous map that we can work with for sample based planners. The discrete map is what we need for graph based planners but cannot be used for sampling based ones. 
-2. To do this all we need is:
-    1. a list of obstacles in 2d - boxes and circular ones.
-    2. the length and width of the map.
-    3. transformation matrix between map and mjc environment. -->
-<!-- 
-I believe this should be easy to do since we already have all of that information. See 5th reference for what we will use this for. -->
-
-
-## References
-1. https://github.com/AtsushiSakai/PythonRobotics
-2. https://motion.cs.illinois.edu/RoboticSystems/CoordinateTransformations.html#2D-coordinate-frames
-3. https://motion.cs.illinois.edu/RoboticSystems/CoordinateTransformations.html#Rotations-in-2D
-4. https://github.com/ai-winter/python_motion_planning/tree/master -> this will be what we will pass our map to. 
-5. https://github.com/ai-winter/python_motion_planning/blob/d2daf0db239d4c8673c771494ad41534ca26a76f/src/python_motion_planning/utils/environment/env.py#L83 -> continuous map for sampling based planners such as RRT
