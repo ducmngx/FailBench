@@ -1,0 +1,7 @@
+model_name: testEnvironment1
+env_path: dumped_kitchen.xml
+robot:
+   name: panda
+   xml_path: panda.xml
+   pos: 2 -4 0.85
+   quat: 1 0 0 0
