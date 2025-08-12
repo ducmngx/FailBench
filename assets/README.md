@@ -1,23 +1,31 @@
-# Readme
-The simple_world.xml loads up the environment and places the jackal. However, the jackal is not correctly placed and falls off the world. 
-So we gotta fix that.
+# Assets Organization
+Based on the franka_emika_panda directory and robosuite the assets directory is made up as follows:
+assets
+|--environments (contains environments including fixtures, cups, etc.)
+    |-- (.xml files such as dumped_kitchen_noassets.xml)
+|--models (contain robots + sensors)
+    |-- robots 
+        |-- franka_emika_panda
+            |-- assets (contain mesh or obj files)
+            |-- (.xml files that are different constructs of panda)
+            |-- (other files such as pictures and a README)
+        |-- (other robots)
+    |-- sensors
+        |-- vlp16
+            |-- assets (mesh files)
+            |-- (.xml files that are different constructs of vlp16)
+        |-- (other sensors)
+|-- config.yaml 
+|-- model_builder.py (builds an environment based on the config.yaml file)
 
-## Environments
-We currently have only 1 environment that andrew has extracted from robocasa. I stripped away all textures and meshes and its now a scary red colored environment. Purpose of it is to simply go through the generated XML tree and understand how to do mapping, planning, etc. 
+### Todo
+1. since the files are now completely restructured, the code for model_builder.py needs to be updated. Similarly, the dependencies within the xml files need to be updated.
 
-Update (07/09/2025)  
+## Andrew's tutorial on generating environment
 For visualization we have to follow Andrew's tutorial on how to generate the environments, we cannot simply download the assets  method does not work as assets are actually generated from yaml files. See [robocasa/model_zoo](https://github.com/robocasa/robocasa/tree/main/robocasa/scripts/model_zoo).
 
-## Models 
 
-### Meshes
-I've only kept the jackal meshes that im using. The rest can be downloaded from https://github.com/jackal/jackal/tree/noetic-devel/jackal_description/meshes.
-
-Velodyne meshes downloaded from velodyne-description package.
-
-Going forward we can probably organize our robot specific meshes in different folders within the meshes folder or whatever is standard.
-
-## General
+### Helpful tips
 Conversion betwen ROS URDF coordinate system -> Mujoco XML:  
 Ros URDF xyz = (forward, left, up)  
 Mujoco XML pos = (right, forward, up)
