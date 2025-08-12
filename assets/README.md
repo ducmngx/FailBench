@@ -18,12 +18,13 @@ assets
 |-- config.yaml 
 |-- model_builder.py (builds an environment based on the config.yaml file)
 
+
 ### Todo
 1. since the files are now completely restructured, the code for model_builder.py needs to be updated. Similarly, the dependencies within the xml files need to be updated.
+2. model_builder makes an output.py and then seperately loads it as an xml file via load_env.py. make it so that model_builder gives an xml and then you can load it into mjc directly without saving.
 
 ## Andrew's tutorial on generating environment
 For visualization we have to follow Andrew's tutorial on how to generate the environments, we cannot simply download the assets  method does not work as assets are actually generated from yaml files. See [robocasa/model_zoo](https://github.com/robocasa/robocasa/tree/main/robocasa/scripts/model_zoo).
-
 
 ### Helpful tips
 Conversion betwen ROS URDF coordinate system -> Mujoco XML:  
