@@ -64,7 +64,7 @@ If you use this project or find it helpful, please consider citing the foundatio
 ```bibtex
 @inproceedings{[FAILBENCH2025],
   title={TBA},
-  author={Duc M. Nguyen, Saad Ghani, Andrew Marshall, Allison Andreyev, and Xuesu Xiao},
+  author={Duc M. Nguyen, Saad Ghani, Andrew Marshall, Allison Andreyev, Gregory J. Stein and Xuesu Xiao},
   booktitle={TBA},
   year={2025}
 }
