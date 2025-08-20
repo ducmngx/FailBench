@@ -2,28 +2,28 @@
 """
 Panda Pick and Place Demo
 Uses your existing RRT planner to pick up object3 and place it in a new location.
+Includes full tendon gripper support for physics-based grasping.
 """
-
 import numpy as np
 import mujoco
 import mujoco.viewer
 import time
 from typing import Optional
-
+from scipy.spatial.transform import Rotation as R
+from typing import List, Optional, Tuple, Callable, Union
 # Import YOUR existing modules
-from planner.algorithms.RRTplanner import JointSpaceRRT
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
-
-
 class PandaPickAndPlace:
     """
     Pick and place demo using your existing planning modules.
+    Supports both individual finger actuators and tendon-based grippers.
     """
     
     def __init__(self, scene_xml_path: str, robot_xml_path: str):
-        """Initialize with your existing modules."""
+        """Initialize with enhanced tendon gripper support."""
         
         print("🤖 Initializing Panda Pick and Place Demo")
         print("=" * 50)
@@ -41,14 +41,14 @@ class PandaPickAndPlace:
         # Initialize your planning modules
         self.ik_solver = IKSolver(self.robot_model)
         self.collision_checker = CollisionChecker(self.scene_model, self.robot_model)
-        self.rrt_planner = JointSpaceRRT(
+        self.rrt_planner = JointSpaceRRTConnect(
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
-            collision_threshold=0.03,
+            collision_threshold=0.0000005,  # 1cm threshold
             planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.1,
-            goal_bias=0.1
+            step_size=0.008,
+            goal_bias=0.8
         )
         
         self.robot_dof = self.robot_model.njnt
@@ -58,8 +58,18 @@ class PandaPickAndPlace:
         # Set initial pose
         self._set_home_position()
         
-        print(f"✅ Pick and place demo ready! Robot DOF: {self.robot_dof}")
-    
+        # # ENHANCED GRIPPER DETECTION INCLUDING TENDON-BASED
+        # print("\n🔍 Enhanced gripper detection (including tendon-based)...")
+        # if not self.quick_fix_gripper_indices():
+        #     print("⚠️ Could not auto-detect gripper. Will need manual setup.")
+        #     self.gripper_actuator_indices = []
+        #     self.gripper_joint_indices = []
+        #     self.gripper_type = "none"
+        # else:
+        #     print(f"✅ Gripper detected: {self.gripper_type}")
+        #     print(f"   Actuator indices: {self.gripper_actuator_indices}")
+        #     print(f"   Joint indices: {self.gripper_joint_indices}")
+            
     def _set_home_position(self):
         """Set robot to home position."""
         home_config = np.zeros(self.robot_dof)
@@ -85,36 +95,110 @@ class PandaPickAndPlace:
             print(f"❌ Error getting {object_name} position: {e}")
             return None
     
-    def plan_to_ee_pose(self, target_pos: np.ndarray) -> bool:
+    def get_end_effector_position(self) -> Optional[np.ndarray]:
+        """Get current end-effector position."""
+        try:
+            site_id = mujoco.mj_name2id(self.scene_model, mujoco.mjtObj.mjOBJ_SITE, "end_effector")
+            if site_id == -1:
+                return None
+            return self.scene_data.site_xpos[site_id].copy()
+        except:
+            return None
+    def densify_path(self, path: List[np.ndarray], max_joint_step: float = 0.05) -> List[np.ndarray]:
+        """Densify path with special handling for large jumps."""
+        if len(path) < 2:
+            return path
+        
+        smooth_path = [path[0]]
+        
+        for i in range(1, len(path)):
+            start_config = path[i-1]
+            end_config = path[i]
+            
+            joint_diff = np.abs(end_config - start_config)
+            max_change = np.max(joint_diff)
+            
+            if max_change > 1.0:  # Detect huge jumps
+                print(f"⚠️ Huge jump detected ({max_change:.2f} rad), adding many intermediate points")
+                num_steps = int(max_change / max_joint_step) + 1
+            else:
+                num_steps = int(max_change / max_joint_step) + 1
+            
+            for step in range(1, num_steps + 1):
+                alpha = step / num_steps
+                intermediate = (1 - alpha) * start_config + alpha * end_config
+                smooth_path.append(intermediate)
+        
+        return smooth_path
+        
+    def plan_to_ee_pose(self, target_pos: np.ndarray, use_downward_constraint: bool = False) -> bool:
         """Plan to end-effector pose using your IK + RRT."""
         
         print(f"🎯 Planning to EE Position: {target_pos}")
+        # Create target with optional orientation constraint
+        if use_downward_constraint:
+            print("   🔽 Using downward orientation constraint")
+            # Create downward orientation quaternion [w, x, y, z]
+            downward_rotation = R.from_euler('x', 180, degrees=True)
+            quat_scipy = downward_rotation.as_quat()  # scipy format [x,y,z,w]
+            
+            # Convert to [w,x,y,z] format for EndEffectorTarget
+            orientation_quat = np.array([quat_scipy[3], quat_scipy[0], quat_scipy[1], quat_scipy[2]])
+            
+            try:
+                target = EndEffectorTarget(
+                    position=target_pos,
+                    orientation=orientation_quat,
+                    frame_name="end_effector",
+                    frame_type="site"
+                )
+                print(f"   ✅ EndEffectorTarget created successfully")
+            except Exception as e:
+                print(f"   ❌ Error creating EndEffectorTarget: {e}")
+                # Try without orientation as fallback
+                print("   🔄 Falling back to position-only target")
+                target = EndEffectorTarget(
+                    position=target_pos,
+                    frame_name="end_effector",
+                    frame_type="site"
+                )
+        else:
+            # Use YOUR original target (position only)
+            target = EndEffectorTarget(
+                position=target_pos,
+                frame_name="end_effector",
+                frame_type="site"
+            )
         
-        # Use YOUR IK solver to find goal configurations
-        target = EndEffectorTarget(
-            position=target_pos,
-            frame_name="end_effector",
-            frame_type="site"
-        )
-        
-        # Try multiple IK seeds
+        # Try multiple IK seeds (increased attempts for constrained cases)
+        max_attempts = 20 if use_downward_constraint else 10
         goal_configs = []
-        for attempt in range(10):
-            seed = self.ik_solver.get_random_valid_config()
+        # In your plan_to_ee_pose, when finding IK solutions:
+        for attempt in range(max_attempts):
+            if attempt == 0:
+                # First attempt: use current configuration as seed
+                seed = self.get_current_config()
+            else:
+                # Other attempts: random seeds
+                seed = self.ik_solver.get_random_valid_config()
+                
             if seed is None:
                 continue
             
-            solution, result = self.ik_solver.solve(target, seed)
-            
+            solution, result = self.ik_solver.solve(target, seed) 
             if result == IKResult.SUCCESS:
                 if not self.collision_checker.check_collisions(solution):
                     goal_configs.append(solution)
                     print(f"   Found IK solution {len(goal_configs)}")
-                    if len(goal_configs) >= 3:
+                    if len(goal_configs) >= 10:
                         break
         
         if not goal_configs:
             print("❌ No valid IK solutions found")
+            # If constrained planning failed, try unconstrained as fallback
+            if use_downward_constraint:
+                print("🔄 Trying fallback without orientation constraint...")
+                return self.plan_to_ee_pose(target_pos, use_downward_constraint=False)
             return False
         
         # Try RRT to each goal
@@ -137,19 +221,73 @@ class PandaPickAndPlace:
         
         print("❌ RRT failed to reach any IK solution")
         return False
-    
-    def execute_path(self, speed: float = 1.0):
-        """Execute planned path with viewer synchronization."""
+    def execute_path(self, speed: float = 0.5, use_physics: bool = True, isGrasping: bool = False):
+        """Execute planned path with optional physics simulation."""
         if self.current_path is None:
             print("No path to execute")
             return
         
-        print(f"🚀 Executing path: {len(self.current_path)} waypoints")
+        if use_physics:
+            print(f"🚀 Executing path with PHYSICS: {len(self.current_path)} waypoints")
+            self._execute_path_physics(speed, isGrasping = isGrasping)
+        else:
+            print(f"🚀 Executing path kinematically: {len(self.current_path)} waypoints")
+            self._execute_path_kinematic(speed)
+    
+    def _execute_path_physics(self, speed: float, isGrasping: bool = False):
+        """Execute path using physics-based position control."""
+        
+        # Control parameters
+        settle_time = int(100 / speed)  # Physics steps to wait for convergence
+        position_tolerance = 0.01       # Radians tolerance for "reached"
+        
+        for i, target_config in enumerate(self.current_path):
+            print(f" 🎮 Physics waypoint {i+1}/{len(self.current_path)}")
+            
+            # Set position control targets (only for arm joints)
+            self.scene_data.ctrl[:7] = target_config[:7]
+
+            if isGrasping:
+                self.close_gripper_gentle(target_force=5000.0)
+
+            # Let the controller reach the target
+            converged = False
+            for step in range(settle_time):
+                # Run physics simulation
+                mujoco.mj_step(self.scene_model, self.scene_data)
+                
+                # Sync viewer
+                if self.current_viewer is not None:
+                    self.current_viewer.sync()
+                
+                # Check convergence
+                current_pos = self.scene_data.qpos[:7]
+                error = np.linalg.norm(current_pos - target_config[:7])
+                
+                if error < position_tolerance:
+                    if not converged:
+                        print(f"   ✅ Reached target (error: {error:.4f})")
+                        converged = True
+                
+                time.sleep(0.001)  # 1ms delay
+            
+            if not converged:
+                current_pos = self.scene_data.qpos[:7]
+                error = np.linalg.norm(current_pos - target_config[:7])
+                print(f"   ⚠️ Timeout (error: {error:.4f})")
+            
+            # Brief pause between waypoints
+            time.sleep(0.1 / speed)
+        
+        print("✅ Physics path execution completed")
+    
+    def _execute_path_kinematic(self, speed: float):
+        """Execute path using kinematic positioning (original method)."""
         
         for i, config in enumerate(self.current_path):
             print(f" Waypoint {i+1}/{len(self.current_path)}")
             
-            # Set configuration
+            # Set configuration directly
             self.scene_data.qpos[:self.robot_dof] = config
             mujoco.mj_forward(self.scene_model, self.scene_data)
             
@@ -159,45 +297,229 @@ class PandaPickAndPlace:
             
             time.sleep(0.2 / speed)
         
-        print("✅ Path execution completed")
+        print("✅ Kinematic path execution completed")
     
+    # =======================================================================
+    # UNIFIED PHYSICS-BASED GRIPPER CONTROL METHODS
+    # =======================================================================
+        
+
+        # Simple gripper control methods for your 8th actuator (index 7) tendon gripper
+
     def open_gripper(self):
-        """Open the Panda gripper."""
-        print("🤏 Opening gripper...")
-        self.scene_data.qpos[7] = 0.04  # finger_joint1
-        self.scene_data.qpos[8] = 0.04  # finger_joint2
-        mujoco.mj_forward(self.scene_model, self.scene_data)
+        """Open the tendon gripper using actuator 7 (0-255 range)."""
+        print("🤏 Opening tendon gripper...")
         
-        if self.current_viewer is not None:
-            self.current_viewer.sync()
-        time.sleep(1.0)
-    
+        # Set actuator 7 to fully open (255 = open, 0 = closed)
+        self.scene_data.ctrl[7] = 255.0
+        
+        # Run physics until gripper opens
+        for step in range(500):
+            mujoco.mj_step(self.scene_model, self.scene_data)
+            
+            # Sync viewer if available
+            if self.current_viewer is not None:
+                self.current_viewer.sync()
+            
+            time.sleep(0.001)  # 1ms per step
+        
+        print(f"   ✅ Gripper opened (control value: {self.scene_data.ctrl[7]:.1f})")
+
     def close_gripper(self):
-        """Close the Panda gripper."""
-        print("✋ Closing gripper...")
-        self.scene_data.qpos[7] = 0.0   # finger_joint1
-        self.scene_data.qpos[8] = 0.0   # finger_joint2
-        mujoco.mj_forward(self.scene_model, self.scene_data)
+        """Close the tendon gripper using actuator 7 with basic force control."""
+        print("✋ Closing tendon gripper...")
         
-        if self.current_viewer is not None:
-            self.current_viewer.sync()
-        time.sleep(1.0)
-    
-    def pick_and_place_object3(self) -> bool:
-        """Complete pick and place demo for object3."""
+        # Start from current position and gradually close
+        initial_control = self.scene_data.ctrl[7]
+        print(f"   Initial control value: {initial_control:.1f}")
         
-        print("\n🎯 Pick and Place Demo: Object3")
-        print("=" * 40)
+        # Gradually reduce control value (close gripper)
+        for step in range(1000):
+            # Calculate target control value (gradually closing)
+            progress = step / 1000
+            target_control = initial_control * (1 - progress * 0.9)  # Close to 10% of initial
+            
+            # Set control command
+            self.scene_data.ctrl[7] = target_control
+            
+            # Step physics
+            mujoco.mj_step(self.scene_model, self.scene_data)
+            
+            # Check for contact forces with object3
+            max_contact_force = 0
+            object_in_contact = False
+            
+            for i in range(self.scene_data.ncon):
+                contact = self.scene_data.contact[i]
+                geom1_name = mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom1)
+                geom2_name = mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom2)
+                
+                # Check for finger-object contact
+                if ((geom1_name and ('finger' in geom1_name.lower() or 'pad' in geom1_name.lower()) and 
+                    geom2_name and 'object3' in geom2_name.lower()) or 
+                    (geom2_name and ('finger' in geom2_name.lower() or 'pad' in geom2_name.lower()) and 
+                    geom1_name and 'object3' in geom1_name.lower())):
+                    
+                    object_in_contact = True
+                    force_mag = np.linalg.norm(contact.f[:3])
+                    max_contact_force = max(max_contact_force, force_mag)
+            
+            # Stop if sufficient force is reached
+            if object_in_contact and max_contact_force > 10.0:  # 10N target force
+                print(f"   ✅ Object grasped! Force: {max_contact_force:.2f}N")
+                break
+            
+            # Stop if gripper nearly closed
+            if target_control < 5.0:  # Control value below 5
+                print(f"   ⚠️ Gripper nearly closed (control: {target_control:.1f})")
+                break
+            
+            # Sync viewer occasionally
+            if step % 20 == 0 and self.current_viewer is not None:
+                self.current_viewer.sync()
+            
+            time.sleep(0.002)  # 2ms per step
         
-        # Step 1: Get object3 position
+        # Hold final position
+        final_control = self.scene_data.ctrl[7]
+        for _ in range(100):
+            self.scene_data.ctrl[7] = final_control
+            mujoco.mj_step(self.scene_model, self.scene_data)
+            if self.current_viewer is not None:
+                self.current_viewer.sync()
+            time.sleep(0.001)
+        
+        print(f"   Final control value: {final_control:.1f}")
+
+    def close_gripper_gentle(self, target_force):
+        """Gentle close for testing - lower force to avoid pushing object away."""
+        print("✋ Closing tendon gripper (gentle)...")
+        
+        initial_control = self.scene_data.ctrl[7]
+        
+        for step in range(800):
+            # Slower, more gentle closing
+            progress = step / 800
+            target_control = initial_control * (1 - progress * 0.8)  # Only close to 20% of initial
+            
+            self.scene_data.ctrl[7] = target_control
+            mujoco.mj_step(self.scene_model, self.scene_data)
+            
+            # Check for lighter contact
+            max_contact_force = 0
+            object_in_contact = False
+            
+            for i in range(self.scene_data.ncon):
+                contact = self.scene_data.contact[i]
+                geom1_name = mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom1)
+                geom2_name = mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom2)
+                
+                if ((geom1_name and ('finger' in geom1_name.lower() or 'pad' in geom1_name.lower()) and 
+                    geom2_name and 'object3' in geom2_name.lower()) or 
+                    (geom2_name and ('finger' in geom2_name.lower() or 'pad' in geom2_name.lower()) and 
+                    geom1_name and 'object3' in geom1_name.lower())):
+                    
+                    object_in_contact = True
+                    force_mag = np.linalg.norm(contact.f[:3])
+                    max_contact_force = max(max_contact_force, force_mag)
+            
+            # Stop at lower force for gentle grasp
+            if object_in_contact and max_contact_force > target_force:
+                print(f"   ✅ Gentle grasp! Force: {max_contact_force:.2f}N")
+                break
+            
+            if step % 20 == 0 and self.current_viewer is not None:
+                self.current_viewer.sync()
+            
+            time.sleep(0.003)  # Slower for gentle approach
+        
+        # Hold position
+        final_control = self.scene_data.ctrl[7]
+        for _ in range(100):
+            self.scene_data.ctrl[7] = final_control
+            mujoco.mj_step(self.scene_model, self.scene_data)
+            if self.current_viewer is not None:
+                self.current_viewer.sync()
+            time.sleep(0.001)
+        
+        print(f"   Final control value: {final_control:.1f}")
+
+    def test_gripper_simple(self):
+        """Simple test of gripper open/close cycle."""
+        print("\n🧪 SIMPLE GRIPPER TEST")
+        print("=" * 25)
+        
+        input("Press Enter to open gripper...")
+        self.open_gripper()
+        
+        input("Press Enter to close gripper (gentle)...")
+        self.close_gripper_gentle(target_force=3.0)  # Very gentle for testing
+        
+        input("Press Enter to open gripper again...")
+        self.open_gripper()
+        
+        print("✅ Gripper test completed!")
+
+    # Usage example in your pick and place:
+    def simple_pick_and_place_example(self):
+        """Simple pick and place using the basic gripper methods."""
+        
+        # Step 1: Open gripper
+        self.open_gripper()
+        
+        # Step 2: Move to object (your existing planning code)
+        # ... your planning and movement code here ...
+        
+        # Step 3: Close gripper to grasp
+        self.close_gripper()  # or use close_gripper_gentle() for lighter objects
+        
+        # Step 4: Move to place location (your existing planning code)
+        # ... your planning and movement code here ...
+        
+        # Step 5: Open gripper to release
+        self.open_gripper()
+
+
+    # Key points for your tendon gripper:
+    """
+    CONTROL MAPPING:
+    - Actuator index: 7 (8th actuator)
+    - Control range: 0 (closed) to 255 (open)
+    - Your XML: <general name="actuator8" tendon="split" ctrlrange="0 255" .../>
+
+    USAGE:
+    1. self.scene_data.ctrl[7] = 255.0  # Fully open
+    2. self.scene_data.ctrl[7] = 0.0    # Fully closed
+    3. self.scene_data.ctrl[7] = 127.5  # Half open
+
+    PHYSICS STEPS:
+    - Always call mujoco.mj_step() after setting control values
+    - Use viewer.sync() to update visualization
+    - Add time.sleep() for realistic motion timing
+    """
+
+    # =======================================================================
+    # UNIFIED PHYSICS-BASED GRIPPER CONTROL METHODS
+    # =======================================================================
+
+    def pick_and_place_object3_full_physics(self) -> bool:
+        """Complete pick and place demo using physics simulation throughout."""
+        
+        print("\n🎯 Physics-Based Pick and Place Demo: Object3")
+        print("=" * 50)
+        
+        # Get object positions
         obj_pos = self.get_object_position("object3")
         if obj_pos is None:
             return False
         
-        # Step 2: Calculate approach positions
-        approach_height = 0.15  # 15cm above object
-        grasp_height = 0.02     # 2cm above table surface
-        place_offset = np.array([0.3, 0.0, 0.0])  # 30cm to the side
+        obj2_pos = self.get_object_position("object2")
+        if obj2_pos is None:
+            return False
+        
+        # Calculate approach positions
+        approach_height = 0.12
+        grasp_height = 0.00  # Slightly higher for physics-based approach
         
         approach_pos = obj_pos.copy()
         approach_pos[2] = obj_pos[2] + approach_height
@@ -205,81 +527,302 @@ class PandaPickAndPlace:
         grasp_pos = obj_pos.copy()
         grasp_pos[2] = obj_pos[2] + grasp_height
         
-        place_approach_pos = obj_pos + place_offset
-        place_approach_pos[2] = obj_pos[2] + approach_height
+        place_approach_pos = obj2_pos.copy()
+        place_approach_pos[2] = obj2_pos[2] + approach_height
         
-        place_pos = obj_pos + place_offset
-        place_pos[2] = obj_pos[2] + grasp_height
+        place_pos = obj2_pos.copy()
+        place_pos[2] = obj2_pos[2] + grasp_height + 0.08
         
-        print(f"📋 Pick and Place Plan:")
+        print(f"📋 Physics Pick and Place Plan:")
         print(f"  Object3 at: {obj_pos}")
         print(f"  Approach:   {approach_pos}")
         print(f"  Grasp:      {grasp_pos}")
         print(f"  Place approach: {place_approach_pos}")
         print(f"  Place:      {place_pos}")
         
-        # Step 3: Open gripper
-        input("\nPress Enter to open gripper...")
-        self.open_gripper()
+        # Phase 1: Open gripper with physics
+        print("\n" + "="*30)
+        print("PHASE 1: PREPARATION")
+        print("="*30)
+        # # input("Press Enter to open gripper with physics...")
+        # # self.open_gripper()
         
-        # Step 4: Move to approach position
-        input("Press Enter to move to approach position...")
-        if not self.plan_to_ee_pose(approach_pos):
+        # Phase 2: Approach object
+        print("\n" + "="*30)
+        print("PHASE 2: APPROACH OBJECT")
+        print("="*30)
+        # input("Press Enter to move to approach position...")
+        if not self.plan_to_ee_pose(approach_pos, use_downward_constraint=True):
             print("❌ Failed to plan to approach position")
             return False
-        self.execute_path(speed=1.0)
         
-        # Step 5: Move down to grasp position
-        input("Press Enter to move to grasp position...")
-        if not self.plan_to_ee_pose(grasp_pos):
+        if self.current_path:
+            smooth_path = self.densify_path(self.current_path, max_joint_step=0.04)
+            self.current_path = smooth_path
+            print(f"✅ Path densified to {len(smooth_path)} waypoints")
+        
+        self.execute_path(speed=1.2, use_physics=True)
+        
+        # Phase 3: Move to grasp position
+        print("\n" + "="*30)
+        print("PHASE 3: POSITION FOR GRASPING")
+        print("="*30)
+        # input("Press Enter to move to grasp position...")
+        if not self.plan_to_ee_pose(grasp_pos, use_downward_constraint=True):
             print("❌ Failed to plan to grasp position")
             return False
-        self.execute_path(speed=0.5)
         
-        # Step 6: Close gripper to grasp object
-        input("Press Enter to close gripper and grasp object...")
-        self.close_gripper()
+        if self.current_path:
+            smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
+            self.current_path = smooth_path
         
-        # Step 7: Lift object (back to approach height)
-        input("Press Enter to lift object...")
-        if not self.plan_to_ee_pose(approach_pos):
+        self.open_gripper()
+        self.execute_path(speed=0.8, use_physics=True)  # Slower for precision
+        
+        # Phase 4: Physics-based grasping
+        print("\n" + "="*30)
+        print("PHASE 4: PHYSICS-BASED GRASPING")
+        print("="*30)
+        # input("Press Enter to grasp object with full physics...")
+        
+        self.close_gripper_gentle(target_force=5000.0)
+        
+        # Phase 5: Lift with physics verification
+        print("\n" + "="*30)
+        print("PHASE 5: LIFT OBJECT")
+        print("="*30)
+        # input("Press Enter to lift object...")
+        
+        # Plan lift motion
+        lift_pos = approach_pos.copy()
+        lift_pos[2] += 0.05  # Extra height for safety
+        
+        if not self.plan_to_ee_pose(lift_pos, use_downward_constraint=False):
             print("❌ Failed to plan lift motion")
             return False
-        self.execute_path(speed=0.5)
         
-        # Step 8: Move to place approach position
-        input("Press Enter to move to place location...")
-        if not self.plan_to_ee_pose(place_approach_pos):
-            print("❌ Failed to plan to place approach")
+        # Execute lift with physics (object should follow if grasped)
+        self.execute_path(speed=0.25, use_physics=True, isGrasping=True)
+        
+        # Verify object is still grasped after lift
+        current_obj_pos = self.get_object_position("object3")
+        if current_obj_pos is not None:
+            height_gained = current_obj_pos[2] - obj_pos[2]
+            print(f"   Object height gained: {height_gained*100:.1f}cm")
+            
+            # if height_gained < 0.08:  # Less than 8cm lifted
+            #     print("⚠️ Object may have been dropped during lift!")
+                
+            #     # Quick re-grasp attempt
+            #     print("🔄 Attempting re-grasp...")
+            #     self.open_gripper()
+                
+            #     # Go back down to object level
+            #     current_obj_pos = self.get_object_position("object3")
+            #     if current_obj_pos is not None:
+            #         regrasp_pos = current_obj_pos.copy()
+            #         regrasp_pos[2] += grasp_height
+                    
+            #         if self.plan_to_ee_pose(regrasp_pos, use_downward_constraint=True):
+            #             self.execute_path(speed=0.6, use_physics=True)
+            #             if not self.improved_grasp_sequence_physics():
+            #                 print("❌ Re-grasp failed")
+            #                 return False
+                        
+            #             # Try lift again
+            #             if self.plan_to_ee_pose(lift_pos, use_downward_constraint=False):
+            #                 self.execute_path(speed=0.6, use_physics=True)
+        
+        # Phase 6: Transport to place location
+        print("\n" + "="*30)
+        print("PHASE 6: TRANSPORT TO PLACE")
+        print("="*30)
+        # input("Press Enter to move to place location...")
+        
+        if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True):
+            print("❌ Failed to plan transport motion")
             return False
-        self.execute_path(speed=1.0)
         
-        # Step 9: Lower to place position
-        input("Press Enter to lower object...")
-        if not self.plan_to_ee_pose(place_pos):
+        self.execute_path(speed=0.25, use_physics=True, isGrasping=True)
+        
+        # Phase 7: Lower to place position
+        print("\n" + "="*30)
+        print("PHASE 7: PLACE OBJECT")
+        print("="*30)
+        # input("Press Enter to lower object to place position...")
+        
+        if not self.plan_to_ee_pose(place_pos, use_downward_constraint=True):
             print("❌ Failed to plan to place position")
             return False
-        self.execute_path(speed=0.5)
         
-        # Step 10: Open gripper to release object
-        input("Press Enter to release object...")
+        self.execute_path(speed=0.25, use_physics=True, isGrasping=True)  # Slow and careful
+        
+        # Phase 8: Release with physics
+        print("\n" + "="*30)
+        print("PHASE 8: RELEASE OBJECT")
+        print("="*30)
+        # input("Press Enter to release object with physics...")
+        
         self.open_gripper()
         
-        # Step 11: Retreat
-        input("Press Enter to retreat...")
-        if not self.plan_to_ee_pose(place_approach_pos):
+        # Give time for object to settle
+        print("   Allowing object to settle...")
+        for _ in range(200):  # 200 physics steps
+            mujoco.mj_step(self.scene_model, self.scene_data)
+            if self.current_viewer is not None:
+                self.current_viewer.sync()
+            time.sleep(0.005)
+        
+        # Verify placement
+        final_obj_pos = self.get_object_position("object3")
+        if final_obj_pos is not None:
+            placement_distance = np.linalg.norm(final_obj_pos[:2] - obj2_pos[:2])  # XY distance to target
+            print(f"   Placement accuracy: {placement_distance*100:.1f}cm from target")
+            
+            if placement_distance < 0.05:  # Within 5cm
+                print("   ✅ Excellent placement!")
+            elif placement_distance < 0.10:  # Within 10cm
+                print("   ✅ Good placement!")
+            else:
+                print("   ⚠️ Placement could be better")
+        
+        # Phase 9: Retreat
+        print("\n" + "="*30)
+        print("PHASE 9: RETREAT")
+        print("="*30)
+        # input("Press Enter to retreat from object...")
+        
+        retreat_pos = place_approach_pos.copy()
+        retreat_pos[2] += 0.05  # Extra clearance
+        
+        if not self.plan_to_ee_pose(retreat_pos, use_downward_constraint=False):
             print("❌ Failed to plan retreat motion")
             return False
-        self.execute_path(speed=1.0)
         
-        # Step 12: Return home
-        input("Press Enter to return home...")
+        self.execute_path(speed=1.0, use_physics=True)
+        
+        # Phase 10: Return home
+        print("\n" + "="*30)
+        print("PHASE 10: RETURN HOME")
+        print("="*30)
+        # input("Press Enter to return to home position...")
+        
         home_config = np.zeros(self.robot_dof)
         self.current_path = [self.get_current_config(), home_config]
-        self.execute_path(speed=1.0)
+        smooth_path = self.densify_path(self.current_path, max_joint_step=0.05)
+        self.current_path = smooth_path
+        self.execute_path(speed=1.0, use_physics=True)
         
-        print("\n🎉 Pick and Place Completed Successfully!")
+        print("\n" + "🎉"*20)
+        print("PHYSICS-BASED PICK AND PLACE COMPLETED!")
+        print("🎉"*20)
+        
         return True
+
+    # Update your run_demo method to use the full physics version:
+    def run_demo_full_physics(self):
+        """Run the full physics pick and place demo."""
+        
+        print("\n🎬 Starting FULL PHYSICS Pick and Place Demo")
+        print("=" * 50)
+        
+        with mujoco.viewer.launch_passive(self.scene_model, self.scene_data) as viewer:
+            self.current_viewer = viewer
+            
+            print("\n📋 This PHYSICS demo will:")
+            print("1. Use physics simulation for ALL gripper operations")
+            print("2. Monitor contact forces during grasping")
+            print("3. Verify grasp quality with lift tests")
+            print("4. Handle grasp failures with recovery strategies")
+            print("5. Use physics-based position control throughout")
+            print("\nEach phase requires Enter to proceed...")
+            
+            input("\nPress Enter to start full physics demo...")
+            
+            # Run full physics pick and place
+            success = self.pick_and_place_object3_full_physics()
+            
+            if success:
+                print("\n✅ Full physics pick and place demo completed successfully!")
+            else:
+                print("\n❌ Full physics pick and place demo failed")
+            
+            self.current_viewer = None
+            input("\nPress Enter to exit...")
+ 
+    def debug_ik_issue(self, target_pos: np.ndarray):
+        """Debug why IK fails at this position."""
+        print(f"\n🔍 Debugging IK at position: {target_pos}")
+        
+        # Test 1: IK without collision checking
+        target = EndEffectorTarget(position=target_pos, frame_name="end_effector", frame_type="site")
+        seed = np.zeros(self.robot_dof)
+        
+        print("1. Testing IK without collision...")
+        solution, result = self.ik_solver.solve(target, seed)
+        print(f"   IK result: {result}")
+        
+        if result == IKResult.SUCCESS:
+            print("2. Testing collision detection on solution...")
+            collision = self.collision_checker.check_collisions(solution)
+            print(f"   Collision detected: {collision}")
+            
+            if collision:
+                print("3. Checking what's colliding...")
+                self.debug_collision_details(solution)
+                
+        # Test 2: Try multiple seeds
+        print("4. Testing with 5 different seeds...")
+        for i in range(5):
+            seed = self.ik_solver.get_random_valid_config()
+            if seed is not None:
+                solution, result = self.ik_solver.solve(target, seed)
+                collision = self.collision_checker.check_collisions(solution) if result == IKResult.SUCCESS else "N/A"
+                print(f"   Seed {i+1}: IK={result}, Collision={collision}")
+                
+                # Show collision details for first successful seed with collision
+                if result == IKResult.SUCCESS and collision and i == 0:
+                    print(f"   Collision details for seed {i}:")
+                    self.debug_collision_details(solution)
+
+    def debug_collision_details(self, config: np.ndarray):
+        """Debug what specific geometries are colliding."""
+        print("   🔍 Collision Analysis:")
+        
+        # Set the configuration
+        self.scene_data.qpos[:self.robot_dof] = config
+        mujoco.mj_forward(self.scene_model, self.scene_data)
+        
+        # Check all collision pairs
+        for i in range(self.scene_data.ncon):
+            contact = self.scene_data.contact[i]
+            geom1_id = contact.geom1
+            geom2_id = contact.geom2
+            
+            # Get geometry names
+            geom1_name = mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_GEOM, geom1_id)
+            geom2_name = mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_GEOM, geom2_id)
+            
+            print(f"     Collision: {geom1_name} <-> {geom2_name}")
+            print(f"     Distance: {contact.dist:.4f}m")
+
+    def test_position_reachability(self):
+        """Test if current grasp position is reachable."""
+        obj_pos = self.get_object_position("object3")
+        if obj_pos is None:
+            return
+        
+        approach_pos = obj_pos.copy()
+        approach_pos[2] = obj_pos[2] + 0.15
+        
+        grasp_pos = obj_pos.copy() 
+        grasp_pos[2] = obj_pos[2] + 0.04
+        
+        print("Testing approach position:")
+        self.debug_ik_issue(approach_pos)
+        
+        print("\nTesting grasp position:")
+        self.debug_ik_issue(grasp_pos)
     
     def run_demo(self):
         """Run the pick and place demo with MuJoCo viewer."""
@@ -292,13 +835,16 @@ class PandaPickAndPlace:
             
             print("\n📋 This demo will:")
             print("1. Locate object3 in the scene")
-            print("2. Plan approach trajectory using your RRT")
-            print("3. Grasp the object with gripper control")
-            print("4. Move it to a new location")
-            print("5. Release and return home")
+            print("2. Plan approach trajectory (🔽 downward constraint)")
+            print("3. Grasp the object (🔽 downward constraint)")
+            print("4. Move it to place approach (🔽 downward constraint)")
+            print("5. Place and release (🔽 downward constraint)")
+            print("6. Retreat and return home (unconstrained)")
             print("\nEach step requires Enter to proceed...")
             
             input("\nPress Enter to start pick and place demo...")
+
+            self.test_position_reachability()
             
             # Run pick and place
             success = self.pick_and_place_object3()
@@ -324,7 +870,7 @@ def main():
         demo = PandaPickAndPlace(scene_xml_path, robot_xml_path)
         
         # Run the demo
-        demo.run_demo()
+        demo.run_demo_full_physics()
     
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
