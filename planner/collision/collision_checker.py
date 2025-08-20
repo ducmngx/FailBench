@@ -34,14 +34,14 @@ class CollisionChecker:
         self.scene_data.qpos[:len(robot_config)] = robot_config
         mujoco.mj_forward(self.scene_model, self.scene_data)
 
-    def _check_collision(self, geom1_id, geom2_id, threshold=0.03):
+    def _check_collision(self, geom1_id, geom2_id, threshold):
         """Your existing method - perfect as is."""
         fromto = np.zeros(6)
         dist = mujoco.mj_geomDistance(
             self.scene_model, self.scene_data, geom1_id, geom2_id,
             distmax=0.1, fromto=fromto
         )
-        return dist <= threshold
+        return np.abs(dist) <= threshold
     
     def _update_collision_pairs(self):
         """
@@ -49,7 +49,7 @@ class CollisionChecker:
         """
         self.collision_pairs = self._xml_extractor.get_collision_pairs()
 
-    def check_collisions(self, robot_config=None, threshold=0.03):
+    def check_collisions(self, robot_config=None, threshold=0.0): # threshold=0.0000001
         """
         FIXED: Your existing method with robot_config parameter added.
         """
@@ -68,5 +68,7 @@ class CollisionChecker:
                     if self._check_collision(geom1_id=geom1_id, 
                                            geom2_id=geom2_id, 
                                            threshold=threshold):
+                        print(f"Collision detected between geom {geom1_id} and geom {geom2_id}")
+                        print(f"Distance: {np.abs(mujoco.mj_geomDistance(self.scene_model, self.scene_data, geom1_id, geom2_id, distmax=0.1, fromto=np.zeros(6)))} -- Threshold: {threshold}")
                         return True
         return False
