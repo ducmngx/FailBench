@@ -41,26 +41,27 @@ class AggressiveFailureInjector:
                 self.data.ctrl[actuator_id] = 0.0
                 
                 # Change actuator type to completely passive
-                self.model.actuator_gaintype[actuator_id] = 0  # No gain processing
-                self.model.actuator_biastype[actuator_id] = 0  # No bias processing
+                self.model.actuator_gaintype[actuator_id] = 0  # No gain processing <- incorrect. gaintype = 0 means fixed gain. there is some process, gain*ctrl, but the gain is fixed.
+                self.model.actuator_biastype[actuator_id] = 0  # No bias processing 
         
-        # Method 2: Remove joint stiffness and add damping
+        # Method 2: Remove joint stiffness (no internal springs) and damping
         self.model.jnt_stiffness[joint_id] = 0.0
         self.model.dof_damping[joint_id] = 0.0  # Remove damping too - let it swing freely
         
         # Method 3: Zero friction so joint moves freely
         self.model.dof_frictionloss[joint_id] = 0.0
         
-        # Method 4: Set very loose joint limits
+        # Method 4: Set very loose joint limits -> quadrupling the range
         original_range = self.model.jnt_range[joint_id, :].copy()
         range_center = np.mean(original_range)
         range_span = original_range[1] - original_range[0]
-        self.model.jnt_range[joint_id, 0] = range_center - range_span * 2  # Very loose
+        self.model.jnt_range[joint_id, 0] = range_center - range_span * 2  # Very loose 
         self.model.jnt_range[joint_id, 1] = range_center + range_span * 2
         
         # Method 5: Apply small downward bias force to encourage falling
         self.data.qfrc_applied[joint_id] = -0.1  # Small downward force
-        
+        # is this necessary? 
+
         self.failed_joints.add(joint_name)
         print(f"   ✅ {joint_name} completely disabled - should fall freely!")
     
@@ -102,7 +103,8 @@ class AggressiveFailureInjector:
         
         # Remove applied forces
         self.data.qfrc_applied[joint_id] = 0.0
-        
+        # this may not be desirable as it may interfere in planning/whatever the robot was doing before the failure happened
+
         # Restore actuator parameters
         for actuator_id in range(self.model.nu):
             if self.model.actuator_trnid[actuator_id, 0] == joint_id:
@@ -131,7 +133,7 @@ def test_guaranteed_drop():
     # FORCE enable gravity with strong setting
     model.opt.gravity[:] = [0, 0, -9.81]
     
-    # Remove any existing damping that might slow falling
+    # Reduce any existing damping that might slow falling
     model.dof_damping[:] *= 0.1  # Reduce global damping
     
     print(f"🌍 Gravity: {model.opt.gravity}")
