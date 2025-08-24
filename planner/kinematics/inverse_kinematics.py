@@ -38,7 +38,7 @@ class IKConfig:
 class EndEffectorTarget:
     """End-effector target specification."""
     position: np.ndarray
-    orientation: Optional[np.ndarray] = None  # quaternion [w,x,y,z]
+    orientation: Optional[np.ndarray] = None  # quaternion [w,x,y,z] 
     frame_name: str = "end_effector"
     frame_type: str = "site"
     position_cost: Optional[float] = None
@@ -131,8 +131,9 @@ class IKSolver:
             
             # Set target pose
             if target.orientation is not None:
+                target_so3 = mink.SO3(wxyz=target.orientation)
                 target_transform = mink.SE3.from_rotation_and_translation(
-                    target.orientation, target.position 
+                    target_so3, target.position 
                 )
             else:
                 # Keep current orientation
@@ -328,7 +329,8 @@ class IKSolver:
             
             # Orientation error (if specified)
             if target.orientation is not None:
-                current_quat = current_transform.as_quaternion_xyzw()
+                # current_quat = current_transform.as_quaternion_xyzw()
+                current_quat = current_transform.rotation().wxyz
                 target_quat = target.orientation
                 # Convert to [x,y,z,w] format if needed
                 if len(target_quat) == 4 and target_quat[0] > 0.7:  # Likely [w,x,y,z]
