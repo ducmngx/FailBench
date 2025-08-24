@@ -4,7 +4,7 @@ from failure_injection.collision_utils import *
 
 class CollisionEstimator:
 
-    def __init__(self, model, data, method_type="bounding_sphere", inflation_radius=0, robot_root_name="link0"):
+    def __init__(self, model, data, method_type="bounding_sphere", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
         self.model = model
         self.data = data
         self.method_type = method_type
@@ -12,52 +12,45 @@ class CollisionEstimator:
         self.collision_function = None
         self.robot_root_name = robot_root_name
         self._init_non_robot_geoms()
+        self._init_robot_geoms(robot_joints)
     
+    def estimate_bodies_in_collision(self, failing_joints, failure_type="aggressive"):
+        """
+        The main method that will estimate the non-robot bodies that are estimated to be in collision upon failure_type failure at joint failing_joint.
+        failing_joints: the joint(s) that fails. string or list of strings.
+        failure_type: fixed to the only failure we have, can be enum in the future. (string)
+        """
+        assert failure_type == "aggressive", "No other failure type is supported."
+
+        failing_joint_ids = self._convert_to_joint_ids(failing_joints)
+
+        if isinstance(failing_joints, list):
+            failing_geoms = np.unique(np.concatenate([self.robot_joint_geoms[joint_id] for joint_id in failing_joint_ids]))
+            return self._estimate_bodies_in_collision(failing_geoms)
+        else:
+            failing_geoms = self.robot_joint_geoms[failing_joint_ids]
+            return self._estimate_bodies_in_collision(failing_geoms)
+
     def _init_non_robot_geoms(self):
         non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
         self.non_robot_geoms = get_bodies_geoms(self.model, non_robot_bodies)
         return self.non_robot_geoms
 
-    def estimate_bodies_in_collision_with_multiple_failures(self, failing_joints, failure_type="aggressive"):
+    def _init_robot_geoms(self, all_robot_joints):
         """
-        The main method that will estimate the non-robot bodies that are estimated to be in collision upon failure_type failure at joint failing_joint.
-        failing_joint: the joint that fails. (string)
-        failure_type: fixed to the only failure we have, can be enum in the future. (string)
+        Instead of finding geoms everytime estimate_bodies_in_collision is called, pre-process it and store in a dictionary
         """
-        assert failure_type == "aggressive", "No other failure type is supported."
-
-        # get attached bodies 
-        joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, failing_joint) for failing_joint in failing_joints]
+        self.robot_joint_geoms = {joint:[] for joint in all_robot_joints}
+        joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, failing_joint) for failing_joint in all_robot_joints]
         child_bids  = self.model.jnt_bodyid[joint_ids]
         parent_bids = self.model.body_parentid[child_bids]
-        all_bids = np.unique(np.concatenate((child_bids, parent_bids)))
 
         # get geoms in bodies
-        failing_geoms = get_bodies_geoms(self.model, all_bids) 
+        child_geoms = get_bodies_geoms(self.model, child_bids) 
+        parent_geoms = get_bodies_geoms(self.model, parent_bids)
+        self.robot_joint_ids = {all_robot_joints[i]:joint_ids[i] for i in range(len(joint_ids))}
+        self.robot_joint_geoms = {joint_ids[i]: np.unique(np.concatenate((child_geoms[i], parent_geoms[i]))) for i in range(len(joint_ids)) }
 
-        return self._estimate_bodies_in_collision(failing_geoms)
-        
-
-
-    def estimate_bodies_in_collision_with_single_failure(self, failing_joint, failure_type="aggressive"):
-        """
-        The main method that will estimate the non-robot bodies that are estimated to be in collision upon failure_type failure at joint failing_joint.
-        failing_joint: the joint that fails. (string)
-        failure_type: fixed to the only failure we have, can be enum in the future. (string)
-        """
-        assert failure_type == "aggressive", "No other failure type is supported."
-
-        # get attached bodies 
-        joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, failing_joint)
-        child_bid  = self.model.jnt_bodyid[joint_id]
-        parent_bid = self.model.body_parentid[child_bid]
-
-        # get geoms in bodies
-        child_geoms = get_body_geoms(self.model, child_bid) 
-        parent_geoms = get_body_geoms(self.model, parent_bid) 
-        failing_geoms = np.concatenate([child_geoms, parent_geoms])
-
-        return self._estimate_bodies_in_collision(failing_geoms)
 
     def _estimate_bodies_in_collision(self, failing_geoms):
         """
@@ -79,8 +72,6 @@ class CollisionEstimator:
         estimated_collision_geom_ids = estimated_collisions[:, 1]
         estimated_collision_body_ids = np.unique(self.model.geom_bodyid[estimated_collision_geom_ids])  # to get rid of duplicates
         return estimated_collision_body_ids
-    
-
 
     def _get_colliding_geom_pairs(self, robot_geoms, candidate_geoms):
         """
@@ -127,6 +118,13 @@ class CollisionEstimator:
         cond = (dx**2 + dy**2 <= (robot_geom_bounding_radius + candidate_geom_bounding_radius)**2) & (candidate_geom_coords[:, 2] - candidate_geom_bounding_radius <= robot_geom_coords[:,2]) 
         return geom_pairs[cond]
 
+    def _convert_to_joint_ids(self, joint_names):
+        if isinstance(joint_names, list):
+            return [self.robot_joint_ids[joint_name] for joint_name in joint_names]
+        else:
+            assert isinstance(joint_names, str) 
+            return self.robot_joint_ids[joint_names]
+    
     def _axis_aligned_bounding_box_method(self, geom_pairs):
         raise NotImplementedError()
 
@@ -139,9 +137,80 @@ def test():
     mujoco.mj_forward(model, data)  # Update kinematics
 
     estimator = CollisionEstimator(model, data)
-    body_ids = estimator.estimate_bodies_in_collision_with_single_failure("joint1")
+    body_ids = estimator.estimate_bodies_in_collision_with_single_failure("joint1") # the function I want to test
     body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) for body_id in body_ids]
     print(body_ids, body_names)
 
+    all_joints = ["joint1","joint2","joint3","joint4","joint5","joint6","joint7"]
+    
+    body_ids = estimator.estimate_bodies_in_collision_with_multiple_failures(all_joints) # the function I want to test
+    body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) for body_id in body_ids]
+    print(body_ids, body_names)
+
+def fancy_test_collision_estimator():
+    """Physics-based test of collision estimation for Franka joints."""
+
+    print("\n🎯 Collision Estimation Test")
+    print("=" * 50)
+
+    # Phase 1: Load model
+    print("\n" + "="*30)
+    print("PHASE 1: LOAD MODEL")
+    print("="*30)
+
+    robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
+    try:
+        model = mujoco.MjModel.from_xml_path(robot_xml_path)
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)  # Update kinematics
+        print("✅ Model loaded successfully")
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
+        return False
+
+    # Phase 2: Initialize estimator
+    print("\n" + "="*30)
+    print("PHASE 2: INITIALIZE ESTIMATOR")
+    print("="*30)
+
+    try:
+        estimator = CollisionEstimator(model, data)
+        print("✅ Collision estimator initialized")
+    except Exception as e:
+        print(f"❌ Failed to initialize estimator: {e}")
+        return False
+
+    # Phase 3: Test single failure case
+    print("\n" + "="*30)
+    print("PHASE 3: SINGLE FAILURE TEST")
+    print("="*30)
+
+    try:
+        body_ids = estimator.estimate_bodies_in_collision_with_single_failure("joint1")
+        body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in body_ids]
+        print(f"   Colliding bodies (joint1): {body_names}")
+    except Exception as e:
+        print(f"❌ Single failure estimation failed: {e}")
+        return False
+
+    # Phase 4: Test multiple failure case
+    print("\n" + "="*30)
+    print("PHASE 4: MULTIPLE FAILURES TEST")
+    print("="*30)
+
+    try:
+        all_joints = ["joint1","joint2","joint3","joint4","joint5","joint6","joint7"]
+        body_ids = estimator.estimate_bodies_in_collision_with_multiple_failures(all_joints)
+        body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in body_ids]
+        print(f"   Colliding bodies (all joints): {body_names}")
+    except Exception as e:
+        print(f"❌ Multiple failure estimation failed: {e}")
+        return False
+
+    # Success
+    print("\n🎉 Collision Estimator Test Completed Successfully!")
+    return True
+
+
 if __name__ == "__main__":
-    test()
+    fancy_test_collision_estimator()
