@@ -38,8 +38,13 @@ def get_non_robot_bodies(model, robot_root_name):
 
     return non_robot_bodies
 
-def get_bodies_geoms(model, body_ids):
-    return np.concatenate([get_body_geoms(model, body_id) for body_id in body_ids])
+def get_bodies_geoms(model, body_ids, keep_seperate=False):
+    body_geoms = [get_body_geoms(model, body_id) for body_id in body_ids]
+    if keep_seperate:
+        return np.concatenate(body_geoms)
+    else:
+        return body_geoms
+
 
 def get_body_geoms(model, body_id):
     return np.arange(model.body_geomadr[body_id], model.body_geomadr[body_id] + model.body_geomnum[body_id])
