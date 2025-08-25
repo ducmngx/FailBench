@@ -1,6 +1,8 @@
 import mujoco
 import numpy as np
 from failure_injection.collision_utils import *
+import traceback
+from tabulate import tabulate
 
 class CollisionEstimator:
 
@@ -26,10 +28,28 @@ class CollisionEstimator:
 
         if isinstance(failing_joints, list):
             failing_geoms = np.unique(np.concatenate([self.robot_joint_geoms[joint_id] for joint_id in failing_joint_ids]))
-            return self._estimate_bodies_in_collision(failing_geoms)
         else:
             failing_geoms = self.robot_joint_geoms[failing_joint_ids]
-            return self._estimate_bodies_in_collision(failing_geoms)
+
+        # get robot-candidate geom pairs to check possible collision
+        colliding_id_pairs = self._get_colliding_geom_pairs(failing_geoms, self.non_robot_geoms)
+
+        if self.method_type == "bounding_sphere":
+            # check for collisions using bounding spheres - easier but a more course method.
+            estimated_collisions = self._bounding_sphere_method(colliding_id_pairs)
+        elif self.method_type == "AABB":
+            # check for collisions using AABB - not implemented but could be a faster and more finer method.
+            estimated_collisions = self._axis_aligned_bounding_box_method(colliding_id_pairs)
+        else:
+            raise NotImplementedError()
+
+        # given geom collision pairs, get the non-robot ones and return their body ids. 
+        # estimated_collision_geom_ids = estimated_collisions[:, 1]
+
+        robot_body_ids = self.model.geom_bodyid[estimated_collisions[:,0]]
+        cand_body_ids = self.model.geom_bodyid[estimated_collisions[:,1]]
+        estimated_collision_pairs_body_ids = np.unique(np.stack((robot_body_ids, cand_body_ids), axis=1), axis=0)
+        return estimated_collision_pairs_body_ids
 
     def _init_non_robot_geoms(self):
         non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
@@ -51,26 +71,6 @@ class CollisionEstimator:
         self.robot_joint_ids = {all_robot_joints[i]:joint_ids[i] for i in range(len(joint_ids))}
         self.robot_joint_geoms = {joint_ids[i]: np.unique(np.concatenate((child_geoms[i], parent_geoms[i]))) for i in range(len(joint_ids)) }
 
-    def _estimate_bodies_in_collision(self, failing_geoms):
-        """
-        Helper function for single and multiple failures.
-        """
-        # get robot-candidate geom pairs to check possible collision
-        colliding_id_pairs = self._get_colliding_geom_pairs(failing_geoms, self.non_robot_geoms)
-
-        if self.method_type == "bounding_sphere":
-            # check for collisions using bounding spheres - easier but a more course method.
-            estimated_collisions = self._bounding_sphere_method(colliding_id_pairs)
-        elif self.method_type == "AABB":
-            # check for collisions using AABB - not implemented but could be a faster and more finer method.
-            estimated_collisions = self._axis_aligned_bounding_box_method(colliding_id_pairs)
-        else:
-            raise NotImplementedError()
-
-        # given geom collision pairs, get the non-robot ones and return their body ids. 
-        estimated_collision_geom_ids = estimated_collisions[:, 1]
-        estimated_collision_body_ids = np.unique(self.model.geom_bodyid[estimated_collision_geom_ids])  # to get rid of duplicates
-        return estimated_collision_body_ids
 
     def _get_colliding_geom_pairs(self, robot_geoms, candidate_geoms):
         """
@@ -128,24 +128,6 @@ class CollisionEstimator:
         raise NotImplementedError()
 
 
-def test_collision_estimator():
-    robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
-    model = mujoco.MjModel.from_xml_path(robot_xml_path)
-    data = mujoco.MjData(model)
-
-    mujoco.mj_forward(model, data)  # Update kinematics
-
-    estimator = CollisionEstimator(model, data)
-    body_ids = estimator.estimate_bodies_in_collision("joint1") # the function I want to test
-    body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) for body_id in body_ids]
-    print(body_ids, body_names)
-
-    all_joints = ["joint1","joint2","joint3","joint4","joint5","joint6","joint7"]
-    
-    body_ids = estimator.estimate_bodies_in_collision(all_joints) # the function I want to test
-    body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) for body_id in body_ids]
-    print(body_ids, body_names)
-
 def fancy_test_collision_estimator():
     """Physics-based test of collision estimation for Franka joints."""
 
@@ -179,31 +161,59 @@ def fancy_test_collision_estimator():
         print(f"❌ Failed to initialize estimator: {e}")
         return False
 
-    # Phase 3: Test single failure case
+    # Phase 3: Single joint collision test
     print("\n" + "="*30)
-    print("PHASE 3: SINGLE FAILURE TEST")
+    print("PHASE 3: SINGLE JOINT COLLISION TEST")
     print("="*30)
 
     try:
-        body_ids = estimator.estimate_bodies_in_collision("joint1")
-        body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in body_ids]
-        print(f"   Colliding bodies (joint1): {body_names}")
+        collision_pair_body_ids = estimator.estimate_bodies_in_collision("joint1")
+        robot_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 0]
+        ]
+        world_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 1]
+        ]
+
+        if len(robot_body_names) == 0:
+            print("⚠️ No collisions detected for joint1")
+        else:
+            table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
+            print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
+
+        print("✅ Single joint collision test completed")
     except Exception as e:
-        print(f"❌ Single failure estimation failed: {e}")
+        print(f"❌ Single joint collision estimation failed: {e}")
         return False
 
-    # Phase 4: Test multiple failure case
+    # Phase 4: Multiple joint collision test
     print("\n" + "="*30)
-    print("PHASE 4: MULTIPLE FAILURES TEST")
+    print("PHASE 4: MULTIPLE JOINT COLLISION TEST")
     print("="*30)
 
     try:
-        all_joints = ["joint1","joint2","joint3","joint4","joint5","joint6","joint7"]
-        body_ids = estimator.estimate_bodies_in_collision(all_joints)
-        body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in body_ids]
-        print(f"   Colliding bodies (all joints): {body_names}")
+        all_joints = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"]
+        collision_pair_body_ids = estimator.estimate_bodies_in_collision(all_joints)
+        robot_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 0]
+        ]
+        world_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 1]
+        ]
+
+        if len(robot_body_names) == 0:
+            print("⚠️ No collisions detected for multiple joints")
+        else:
+            table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
+            print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
+
+        print("✅ Multiple joints collision test completed")
     except Exception as e:
-        print(f"❌ Multiple failure estimation failed: {e}")
+        print(f"❌ Multiple joint collision estimation failed: {e}")
         return False
 
     # Success
