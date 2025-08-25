@@ -33,8 +33,8 @@ class CollisionEstimator:
 
     def _init_non_robot_geoms(self):
         non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
-        self.non_robot_geoms = get_bodies_geoms(self.model, non_robot_bodies)
-        return self.non_robot_geoms
+        self.non_robot_geoms = np.concatenate(get_bodies_geoms(self.model, non_robot_bodies))
+        # return self.non_robot_geoms
 
     def _init_robot_geoms(self, all_robot_joints):
         """
@@ -50,7 +50,6 @@ class CollisionEstimator:
         parent_geoms = get_bodies_geoms(self.model, parent_bids)
         self.robot_joint_ids = {all_robot_joints[i]:joint_ids[i] for i in range(len(joint_ids))}
         self.robot_joint_geoms = {joint_ids[i]: np.unique(np.concatenate((child_geoms[i], parent_geoms[i]))) for i in range(len(joint_ids)) }
-
 
     def _estimate_bodies_in_collision(self, failing_geoms):
         """
@@ -129,7 +128,7 @@ class CollisionEstimator:
         raise NotImplementedError()
 
 
-def test():
+def test_collision_estimator():
     robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
     model = mujoco.MjModel.from_xml_path(robot_xml_path)
     data = mujoco.MjData(model)
