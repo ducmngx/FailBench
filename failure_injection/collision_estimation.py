@@ -137,13 +137,13 @@ def test():
     mujoco.mj_forward(model, data)  # Update kinematics
 
     estimator = CollisionEstimator(model, data)
-    body_ids = estimator.estimate_bodies_in_collision_with_single_failure("joint1") # the function I want to test
+    body_ids = estimator.estimate_bodies_in_collision("joint1") # the function I want to test
     body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) for body_id in body_ids]
     print(body_ids, body_names)
 
     all_joints = ["joint1","joint2","joint3","joint4","joint5","joint6","joint7"]
     
-    body_ids = estimator.estimate_bodies_in_collision_with_multiple_failures(all_joints) # the function I want to test
+    body_ids = estimator.estimate_bodies_in_collision(all_joints) # the function I want to test
     body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) for body_id in body_ids]
     print(body_ids, body_names)
 
@@ -186,7 +186,7 @@ def fancy_test_collision_estimator():
     print("="*30)
 
     try:
-        body_ids = estimator.estimate_bodies_in_collision_with_single_failure("joint1")
+        body_ids = estimator.estimate_bodies_in_collision("joint1")
         body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in body_ids]
         print(f"   Colliding bodies (joint1): {body_names}")
     except Exception as e:
@@ -200,7 +200,7 @@ def fancy_test_collision_estimator():
 
     try:
         all_joints = ["joint1","joint2","joint3","joint4","joint5","joint6","joint7"]
-        body_ids = estimator.estimate_bodies_in_collision_with_multiple_failures(all_joints)
+        body_ids = estimator.estimate_bodies_in_collision(all_joints)
         body_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in body_ids]
         print(f"   Colliding bodies (all joints): {body_names}")
     except Exception as e:
