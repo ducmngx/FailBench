@@ -1,4 +1,4 @@
-name: mujoco_env
+name: failbench_env
 channels:
   - conda-forge
   - defaults
