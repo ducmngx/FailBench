@@ -12,7 +12,7 @@ from typing import Optional
 from scipy.spatial.transform import Rotation as R
 from typing import List, Optional, Tuple, Callable, Union
 # Import YOUR existing modules
-from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
@@ -41,7 +41,7 @@ class PandaPickAndPlace:
         # Initialize your planning modules
         self.ik_solver = IKSolver(self.robot_model)
         self.collision_checker = CollisionChecker(self.scene_model, self.robot_model)
-        self.rrt_planner = JointSpaceRRTConnect(
+        self.rrt_planner = JointSpaceRRTConnectFailure(
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
@@ -862,8 +862,8 @@ def main():
     """Main function."""
     
     # Update these paths to your XML files
-    scene_xml_path = "/home/aaron/workspace/mujoco-arena/franka_emika_panda/scene.xml"
-    robot_xml_path = "/home/aaron/workspace/mujoco-arena/franka_emika_panda/panda.xml"
+    scene_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
+    robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/panda.xml"
     
     try:
         # Create pick and place demo

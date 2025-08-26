@@ -17,9 +17,10 @@ import time
 import threading
 from typing import List, Optional
 from tabulate import tabulate
+import traceback
 
 # Import YOUR existing modules (adjust paths as needed)
-from planner.algorithms.RRTplanner import JointSpaceRRT
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
@@ -64,16 +65,17 @@ class PandaPlanningDemo:
         print("✅ CollisionChecker (collision_checker.py) initialized")
         
         # 3. Your RRT Planner (using your AbstractRRTPlanner)
-        self.rrt_planner = JointSpaceRRT(
+        self.rrt_planner = JointSpaceRRTConnectFailure(
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
-            collision_threshold=0.03,
+            collision_threshold=0.0000005,
             planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.1,
-            goal_bias=0.1
+            step_size=0.008,
+            goal_bias=0.8
         )
-        print("✅ JointSpaceRRT (RRTplanner.py) initialized")
+        
+        print("✅ JointSpaceRRTConnectFailure (RRTplanner.py) initialized")
         
         # Robot configuration
         self.robot_dof = self.robot_model.njnt
@@ -84,7 +86,7 @@ class PandaPlanningDemo:
         self._set_home_position()
 
         # Collision Estimation upon total failure
-        self.collision_estimator = CollisionEstimator(self.scene_model, self.scene_data)
+        self.collision_estimator = CollisionEstimator(self.scene_model, self.scene_data, failing_joints=[f"joint{i}" for i in range(1,8)])
         
         print(f"\n🎯 Demo ready! Robot DOF: {self.robot_dof}")
     
@@ -399,8 +401,7 @@ class PandaPlanningDemo:
 
     def check_total_failure_collisions(self):
         print("=== CHECK TOTAL FAILURE COLLISIONS ===")
-        robot_joint_names = [f"joint{i}" for i in range(1,8)]
-        collision_pair_body_ids = self.collision_estimator.estimate_bodies_in_collision(robot_joint_names, remove_world_body=True)
+        collision_pair_body_ids = self.collision_estimator.estimate_bodies_in_collision()
         robot_body_names = [
             mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, bid)
             for bid in collision_pair_body_ids[:, 0]
@@ -558,6 +559,7 @@ class PandaPlanningDemo:
             print("  r - Plan to random config")
             print("  p - Plan to EE pose [0.5, 0.2, 0.3]")
             print("  e - Execute current path")
+            print("  g - Execute current path with collision estimation")
             print("  s - Stop execution")
             print("  t - Test modules")
             print("  d - Debug movement")
@@ -599,7 +601,7 @@ class PandaPlanningDemo:
                     elif cmd == 'c':
                         self.check_total_failure_collisions()
                         self.visualize_bounding_spheres(viewer, np.unique(self.collision_estimator.current_collision_pairs.reshape(-1)))
-                        
+    
                     elif cmd == 'q':
                         break
                     
@@ -655,13 +657,14 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         print("Make sure all your modules are in the correct paths")
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":
     print("🚀 Complete Example Using Your Existing Modules")
     print("=" * 60)
     print("This demo uses:")
-    print("  ✅ Your RRTplanner.py (JointSpaceRRT)")
+    print("  ✅ Your RRTplanner.py (JointSpaceRRTConnectFailure)")
     print("  ✅ Your collision_checker.py (CollisionChecker)")
     print("  ✅ Your inverse_kinematics.py (IKSolver)")
     print("  ✅ Your abstract_planner.py (AbstractRRTPlanner)")
