@@ -248,24 +248,27 @@ class IKSolver:
                 return True
         return False
     
-    def get_random_valid_config(self, num_attempts: int = 100) -> Optional[np.ndarray]:
+    def get_random_valid_config(self, rng: np.random.RandomState = None, num_attempts: int = 100) -> Optional[np.ndarray]:
         """
         Generate a random valid configuration within joint limits.
-        Useful for sampling-based planners.
-        
         Args:
             num_attempts: Maximum attempts to find valid config
-            
+            rng: Random number generator for reproducibility
         Returns:
             Random valid configuration or None
         """
+
+        # Use provided RNG or default to numpy random
+        if rng is None:
+            rng = np.random
+
         if not self.config.check_joint_limits:
             # No joint limits defined, sample from reasonable range
             return np.random.uniform(-np.pi, np.pi, self.model.nq)
         
         for _ in range(num_attempts):
             # Sample within joint limits
-            config = np.random.uniform(
+            config = rng.uniform(
                 self.joint_limits_lower, 
                 self.joint_limits_upper
             )

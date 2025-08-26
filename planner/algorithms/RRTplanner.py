@@ -91,11 +91,13 @@ class JointSpaceRRTConnect(AbstractRRTPlanner):
     """RRT-Connect planner operating in joint space - bidirectional RRT."""
     
     def __init__(self, scene_model: mujoco.MjModel, robot_model: mujoco.MjModel, 
-                 ik_solver: IKSolver, collision_threshold: float, **kwargs):
+                 ik_solver: IKSolver, collision_threshold: float, seed: int, **kwargs):
         kwargs.pop('planning_space', None)
         super().__init__(scene_model, ik_solver, planning_space=PlanningSpace.JOINT_SPACE, **kwargs)
         
         self.collision_threshold = collision_threshold
+        self.seed = seed  # Store the seed
+        self.rng = None   # Will be initialized in plan()
         self.initialize_collision_checker(scene_model, robot_model)
         
         # RRT-Connect specific: two trees
@@ -113,15 +115,16 @@ class JointSpaceRRTConnect(AbstractRRTPlanner):
     def sample_random_config(self) -> Optional[np.ndarray]:
         """Sample with bias toward unexplored regions."""
         if len(self.tree) <= 1 or random.random() < 0.3:
-            return self.ik_solver.get_random_valid_config()
+            # Pass RNG to IK solver
+            return self.ik_solver.get_random_valid_config(rng=self.rng)
         else:
-            base_node = random.choice(self.tree)
-            noise = np.random.normal(0, self.step_size * 2, len(base_node.config))
+            base_node = self.rng.choice(self.tree)
+            noise = self.rng.normal(0, self.step_size * 2, len(base_node.config))
             candidate = base_node.config + noise
             if self.ik_solver.is_config_valid(candidate):
                 return candidate
             else:
-                return self.ik_solver.get_random_valid_config()
+                return self.ik_solver.get_random_valid_config(rng=self.rng)
     
     def is_valid_config(self, config):
         """Check if configuration is collision-free."""
@@ -239,6 +242,8 @@ class JointSpaceRRTConnect(AbstractRRTPlanner):
         Plan path using RRT-Connect algorithm with proper path reconstruction.
         """
         print(f"🔄 Starting RRT-Connect planning...")
+        # Initialize RNG with seed at start of planning
+        self.rng = np.random.RandomState(self.seed)
         
         # Initialize trees
         self.tree = [PlanningNode(start_config)]
@@ -304,15 +309,15 @@ class JointSpaceRRTConnect(AbstractRRTPlanner):
 
 class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
     """
-    Overrides AbstractRRTPlanner _find_nearest_node to include failure 
+    Overrides AbstractRRTPlanner _find_nearest_node to include failure cost.
     """
     def __init__(self, scene_model: mujoco.MjModel, robot_model: mujoco.MjModel, 
-                 ik_solver: IKSolver, collision_threshold: float, **kwargs):
-        super().__init__(scene_model, robot_model, ik_solver, collision_threshold, **kwargs)
+                 ik_solver: IKSolver, collision_threshold: float, seed: int, **kwargs):
+        super().__init__(scene_model, robot_model, ik_solver, collision_threshold, seed=seed, **kwargs)
 
         self.mjData = mujoco.MjData(self.model)
         
-        self.failure_weight = 0.01
+        self.failure_weight = 0.05
         failing_joints = [f"joint{i}" for i in range(1,8)]
         self.collision_estimator = CollisionEstimator(self.model, self.mjData, failing_joints=failing_joints)
 
@@ -327,6 +332,10 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         # get severity of collision pairs
         # assume severity = 1 for all interactions
         safety_cost = self.failure_weight * prob_collision_pairs.shape[0] # simply the total count of how many estimated collisions there are
+        
+        print(f"Estimated {prob_collision_pairs.shape[0]} potential collisions, safety cost = {safety_cost}")
+        print(f"Prob collision pairs: {prob_collision_pairs}\n")
+
         return safety_cost
 
 
@@ -345,6 +354,8 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         min_distance = float('inf')
         for i, node in enumerate(tree):
             dist = self.distance(node.config, target_config) + node.cost
+            print(f"Node {i} at {node.config} has distance {dist} (cost {node.cost})")
+            
             if dist < min_distance:
                 min_distance = dist
                 nearest_idx = i
@@ -359,13 +370,16 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             return 'trapped', None
         
         # mData has the new_config as its ctrl
-        new_config_safety_cost = self.safety_cost()
+        new_config_safety_cost = self.safety_cost(config)
 
         if not self.is_path_valid(nearest_node.config, new_config):
             return 'trapped', None
         
         # Add new node to tree
         new_node = PlanningNode(new_config, cost=new_config_safety_cost)
+
+        print(f"{new_node.config} has failure cost {new_node.cost}")
+
         tree.append(new_node)
         new_idx = len(tree) - 1
         parents[new_idx] = nearest_idx
@@ -383,6 +397,8 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         Cost of each node in tree is the safety cost for that configuration.
         """
         print(f"🔄 Starting RRT-Connect planning...")
+
+        self.rng = np.random.RandomState(self.seed)
 
         # Initialize trees
         self.tree = [PlanningNode(start_config, cost=self.safety_cost(start_config))]
@@ -444,3 +460,4 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         
         print(f"❌ RRT-Connect failed after {self.max_iterations} iterations")
         return None
+
