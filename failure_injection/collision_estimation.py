@@ -134,99 +134,99 @@ class CollisionEstimator:
         raise NotImplementedError()
 
 
-# def fancy_test_collision_estimator():
-#     """Physics-based test of collision estimation for Franka joints."""
+def fancy_test_collision_estimator():
+    """Physics-based test of collision estimation for Franka joints."""
 
-#     print("\n🎯 Collision Estimation Test")
-#     print("=" * 50)
+    print("\n🎯 Collision Estimation Test")
+    print("=" * 50)
 
-#     # Phase 1: Load model
-#     print("\n" + "="*30)
-#     print("PHASE 1: LOAD MODEL")
-#     print("="*30)
+    # Phase 1: Load model
+    print("\n" + "="*30)
+    print("PHASE 1: LOAD MODEL")
+    print("="*30)
 
-#     robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
-#     try:
-#         model = mujoco.MjModel.from_xml_path(robot_xml_path)
-#         data = mujoco.MjData(model)
-#         mujoco.mj_forward(model, data)  # Update kinematics
-#         print("✅ Model loaded successfully")
-#     except Exception as e:
-#         print(f"❌ Failed to load model: {e}")
-#         return False
+    robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
+    try:
+        model = mujoco.MjModel.from_xml_path(robot_xml_path)
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)  # Update kinematics
+        print("✅ Model loaded successfully")
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
+        return False
 
-#     # Phase 2: Initialize estimator
-#     print("\n" + "="*30)
-#     print("PHASE 2: INITIALIZE ESTIMATOR")
-#     print("="*30)
+    # Phase 2: Initialize estimator
+    print("\n" + "="*30)
+    print("PHASE 2: INITIALIZE ESTIMATOR")
+    print("="*30)
 
-#     try:
-#         failing_joints = [f"joint{i}" for i in range(1,8)]
-#         estimator = CollisionEstimator(model, data, failing_joints=failing_joints)
-#         print("✅ Collision estimator initialized")
-#     except Exception as e:
-#         print(f"❌ Failed to initialize estimator: {e}")
-#         return False
+    try:
+        failing_joints = [f"joint{i}" for i in range(1,8)]
+        estimator = CollisionEstimator(model, data, failing_joints=failing_joints)
+        print("✅ Collision estimator initialized")
+    except Exception as e:
+        print(f"❌ Failed to initialize estimator: {e}")
+        return False
 
-#     # Phase 3: Single joint collision test
-#     print("\n" + "="*30)
-#     print("PHASE 3: SINGLE JOINT COLLISION TEST")
-#     print("="*30)
+    # Phase 3: Single joint collision test
+    print("\n" + "="*30)
+    print("PHASE 3: SINGLE JOINT COLLISION TEST")
+    print("="*30)
 
-#     try:
-#         collision_pair_body_ids = estimator.estimate_bodies_in_collision("joint1", remove_world_body=False)
-#         robot_body_names = [
-#             mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-#             for bid in collision_pair_body_ids[:, 0]
-#         ]
-#         world_body_names = [
-#             mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-#             for bid in collision_pair_body_ids[:, 1]
-#         ]
+    try:
+        collision_pair_body_ids = estimator.estimate_bodies_in_collision("joint1", remove_world_body=False)
+        robot_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 0]
+        ]
+        world_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 1]
+        ]
 
-#         if len(robot_body_names) == 0:
-#             print("⚠️ No collisions detected for joint1")
-#         else:
-#             table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
-#             print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
+        if len(robot_body_names) == 0:
+            print("⚠️ No collisions detected for joint1")
+        else:
+            table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
+            print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
 
-#         print("✅ Single joint collision test completed")
-#     except Exception as e:
-#         print(f"❌ Single joint collision estimation failed: {e}")
-#         return False
+        print("✅ Single joint collision test completed")
+    except Exception as e:
+        print(f"❌ Single joint collision estimation failed: {e}")
+        return False
 
-#     # Phase 4: Multiple joint collision test
-#     print("\n" + "="*30)
-#     print("PHASE 4: MULTIPLE JOINT COLLISION TEST")
-#     print("="*30)
+    # Phase 4: Multiple joint collision test
+    print("\n" + "="*30)
+    print("PHASE 4: MULTIPLE JOINT COLLISION TEST")
+    print("="*30)
 
-#     try:
-#         all_joints = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"]
-#         collision_pair_body_ids = estimator.estimate_bodies_in_collision(all_joints, remove_world_body=True)
-#         robot_body_names = [
-#             mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-#             for bid in collision_pair_body_ids[:, 0]
-#         ]
-#         world_body_names = [
-#             mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-#             for bid in collision_pair_body_ids[:, 1]
-#         ]
+    try:
+        all_joints = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"]
+        collision_pair_body_ids = estimator.estimate_bodies_in_collision(all_joints, remove_world_body=True)
+        robot_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 0]
+        ]
+        world_body_names = [
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 1]
+        ]
 
-#         if len(robot_body_names) == 0:
-#             print("⚠️ No collisions detected for multiple joints")
-#         else:
-#             table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
-#             print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
+        if len(robot_body_names) == 0:
+            print("⚠️ No collisions detected for multiple joints")
+        else:
+            table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
+            print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
 
-#         print("✅ Multiple joints collision test completed")
-#     except Exception as e:
-#         print(f"❌ Multiple joint collision estimation failed: {e}")
-#         return False
+        print("✅ Multiple joints collision test completed")
+    except Exception as e:
+        print(f"❌ Multiple joint collision estimation failed: {e}")
+        return False
 
-#     # Success
-#     print("\n🎉 Collision Estimator Test Completed Successfully!")
-#     return True
+    # Success
+    print("\n🎉 Collision Estimator Test Completed Successfully!")
+    return True
 
 
-# if __name__ == "__main__":
-#     fancy_test_collision_estimator()
+if __name__ == "__main__":
+    fancy_test_collision_estimator()
