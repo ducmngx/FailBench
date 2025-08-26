@@ -6,7 +6,7 @@ from tabulate import tabulate
 
 class CollisionEstimator:
 
-    def __init__(self, model, data, method_type="bounding_sphere", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
+    def __init__(self, model, data, failing_joints, method_type="bounding_sphere", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
         self.model = model
         self.data = data
         self.method_type = method_type
@@ -15,29 +15,32 @@ class CollisionEstimator:
         self.robot_root_name = robot_root_name
         self._init_non_robot_geoms()
         self._init_robot_geoms(robot_joints)
-    
-    def estimate_bodies_in_collision(self, failing_joints, failure_type="aggressive", remove_world_body=False):
+        self.all_joint_ids = self._convert_to_joint_ids(failing_joints)
+
+    def estimate_bodies_in_collision(self, failing_joints="all", failure_type="aggressive", remove_world_body=True):
         """
         The main method that will estimate the non-robot bodies that are estimated to be in collision upon failure_type failure at joint failing_joint.
         failing_joints: the joint(s) that fails. string or list of strings.
         failure_type: fixed to the only failure we have, can be enum in the future. (string)
         """
         assert failure_type == "aggressive", "No other failure type is supported."
-
-        failing_joint_ids = self._convert_to_joint_ids(failing_joints)
-
-        if isinstance(failing_joints, list):
-            failing_geoms = np.unique(np.concatenate([self.robot_joint_geoms[joint_id] for joint_id in failing_joint_ids]))
+        if failing_joints == "all":
+            failing_joint_ids = self.all_joint_ids
         else:
-            failing_geoms = self.robot_joint_geoms[failing_joint_ids]
+            failing_joint_ids = self._convert_to_joint_ids(failing_joints)
+
+        # if isinstance(failing_joint_ids, list):
+        failing_geoms = np.unique(np.concatenate([self.robot_joint_geoms[joint_id] for joint_id in failing_joint_ids]))
+        # else:
+        #     failing_geoms = self.robot_joint_geoms[failing_joint_ids]
 
         non_robot_geoms = self.non_robot_geoms
         if remove_world_body:
             body_names = np.array([mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in self.model.geom_bodyid[non_robot_geoms]])
             non_robot_geoms = non_robot_geoms[body_names != "world"]
-            # non_robot_geoms 
 
         # get robot-candidate geom pairs to check possible collision
+        # preprocess this in case its slow
         colliding_id_pairs = self._get_colliding_geom_pairs(failing_geoms, non_robot_geoms)
 
         if self.method_type == "bounding_sphere":
@@ -58,7 +61,7 @@ class CollisionEstimator:
 
     def _init_non_robot_geoms(self):
         non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
-        self.non_robot_geoms = np.concatenate(get_bodies_geoms(self.model, non_robot_bodies))
+        self.non_robot_geoms = get_bodies_geoms(self.model, non_robot_bodies, keep_seperate=False)
 
     def _init_robot_geoms(self, all_robot_joints):
         """
@@ -70,8 +73,8 @@ class CollisionEstimator:
         parent_bids = self.model.body_parentid[child_bids]
 
         # get geoms in bodies
-        child_geoms = get_bodies_geoms(self.model, child_bids) 
-        parent_geoms = get_bodies_geoms(self.model, parent_bids)
+        child_geoms = get_bodies_geoms(self.model, child_bids, keep_seperate=True) 
+        parent_geoms = get_bodies_geoms(self.model, parent_bids, keep_seperate=True)
         self.robot_joint_ids = {all_robot_joints[i]:joint_ids[i] for i in range(len(joint_ids))}
         self.robot_joint_geoms = {joint_ids[i]: np.unique(np.concatenate((child_geoms[i], parent_geoms[i]))) for i in range(len(joint_ids)) }
 
@@ -92,7 +95,7 @@ class CollisionEstimator:
 
         first_test = contypes[:, None] & conaffinities[None, :] !=0 
         second_test = conaffinities[:, None] & contypes[None, :] !=0
-        collision_test = first_test & second_test
+        collision_test = first_test | second_test
         np.fill_diagonal(collision_test, False)
         lower_half_test = np.tril(collision_test)
         candidate_idxs, robot_idxs = np.where(lower_half_test[robot_geom_length:, :robot_geom_length])
@@ -125,7 +128,7 @@ class CollisionEstimator:
             return [self.robot_joint_ids[joint_name] for joint_name in joint_names]
         else:
             assert isinstance(joint_names, str) 
-            return self.robot_joint_ids[joint_names]
+            return [self.robot_joint_ids[joint_names]]
     
     def _axis_aligned_bounding_box_method(self, geom_pairs):
         raise NotImplementedError()
@@ -158,7 +161,8 @@ def fancy_test_collision_estimator():
     print("="*30)
 
     try:
-        estimator = CollisionEstimator(model, data)
+        failing_joints = [f"joint{i}" for i in range(1,8)]
+        estimator = CollisionEstimator(model, data, failing_joints=failing_joints)
         print("✅ Collision estimator initialized")
     except Exception as e:
         print(f"❌ Failed to initialize estimator: {e}")
@@ -170,7 +174,7 @@ def fancy_test_collision_estimator():
     print("="*30)
 
     try:
-        collision_pair_body_ids = estimator.estimate_bodies_in_collision("joint1")
+        collision_pair_body_ids = estimator.estimate_bodies_in_collision("joint1", remove_world_body=False)
         robot_body_names = [
             mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
             for bid in collision_pair_body_ids[:, 0]

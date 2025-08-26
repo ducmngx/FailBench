@@ -41,9 +41,9 @@ def get_non_robot_bodies(model, robot_root_name):
 def get_bodies_geoms(model, body_ids, keep_seperate=False):
     body_geoms = [get_body_geoms(model, body_id) for body_id in body_ids]
     if keep_seperate:
-        return np.concatenate(body_geoms)
-    else:
         return body_geoms
+    else:
+        return np.concatenate(body_geoms)
 
 
 def get_body_geoms(model, body_id):
