@@ -16,12 +16,15 @@ import mujoco.viewer
 import time
 import threading
 from typing import List, Optional
+from tabulate import tabulate
+import traceback
 
 # Import YOUR existing modules (adjust paths as needed)
-from planner.algorithms.RRTplanner import JointSpaceRRT
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
+from failure_injection.collision_estimation import CollisionEstimator
 
 
 class PandaPlanningDemo:
@@ -62,16 +65,17 @@ class PandaPlanningDemo:
         print("✅ CollisionChecker (collision_checker.py) initialized")
         
         # 3. Your RRT Planner (using your AbstractRRTPlanner)
-        self.rrt_planner = JointSpaceRRT(
+        self.rrt_planner = JointSpaceRRTConnectFailure(
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
-            collision_threshold=0.03,
+            collision_threshold=0.0000005,
             planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.1,
-            goal_bias=0.1
+            step_size=0.008,
+            goal_bias=0.8
         )
-        print("✅ JointSpaceRRT (RRTplanner.py) initialized")
+        
+        print("✅ JointSpaceRRTConnectFailure (RRTplanner.py) initialized")
         
         # Robot configuration
         self.robot_dof = self.robot_model.njnt
@@ -80,6 +84,9 @@ class PandaPlanningDemo:
         
         # Set initial pose
         self._set_home_position()
+
+        # Collision Estimation upon total failure
+        self.collision_estimator = CollisionEstimator(self.scene_model, self.scene_data, failing_joints=[f"joint{i}" for i in range(1,8)])
         
         print(f"\n🎯 Demo ready! Robot DOF: {self.robot_dof}")
     
@@ -362,6 +369,51 @@ class PandaPlanningDemo:
         print("❌ RRT failed to reach any IK solution")
         return False
     
+    def visualize_bounding_spheres(self, viewer, geom_ids: np.ndarray, duration=10.0):
+        """
+        Starts a thread that visualizes the bounding spheres for duration seconds.
+        """
+        def _show_spheres_temporarily(viewer, geom_ids, model, data, duration=10.0):
+            ngeom = 0
+            for i in geom_ids:
+                mujoco.mjv_initGeom(
+                    viewer.user_scn.geoms[ngeom],
+                    type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                    size=[model.geom_rbound[i], 0, 0],
+                    pos=data.geom_xpos[i],
+                    mat=np.eye(3).flatten(),
+                    rgba=[1, 0, 0, 0.3],
+                )
+                ngeom += 1
+            viewer.user_scn.ngeom = ngeom
+            viewer.sync()
+            time.sleep(duration)
+            viewer.user_scn.ngeom = 0
+            viewer.sync()
+
+        # When C is pressed:
+        threading.Thread(
+            target=_show_spheres_temporarily,
+            args=(viewer, geom_ids, self.scene_model, self.scene_data, duration),
+            daemon=True
+        ).start()
+
+
+    def check_total_failure_collisions(self):
+        print("=== CHECK TOTAL FAILURE COLLISIONS ===")
+        collision_pair_body_ids = self.collision_estimator.estimate_bodies_in_collision()
+        robot_body_names = [
+            mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 0]
+        ]
+        world_body_names = [
+            mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            for bid in collision_pair_body_ids[:, 1]
+        ]
+        table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
+        print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
+        print("\n✅ Total failure collision check complete.")
+
     # def execute_path(self, speed: float = 1.0):
     #     """Execute planned path with visualization."""
         
@@ -507,9 +559,11 @@ class PandaPlanningDemo:
             print("  r - Plan to random config")
             print("  p - Plan to EE pose [0.5, 0.2, 0.3]")
             print("  e - Execute current path")
+            print("  g - Execute current path with collision estimation")
             print("  s - Stop execution")
             print("  t - Test modules")
             print("  d - Debug movement")
+            print("  c - Estimate total failure collisions")
             print("  q - Quit")
             
             while viewer.is_running():
@@ -543,7 +597,11 @@ class PandaPlanningDemo:
                         self.debug_model_state()
                         self.check_joint_limits()
                         self.quick_diagnostic()
-                    
+
+                    elif cmd == 'c':
+                        self.check_total_failure_collisions()
+                        self.visualize_bounding_spheres(viewer, np.unique(self.collision_estimator.current_collision_pairs.reshape(-1)))
+    
                     elif cmd == 'q':
                         break
                     
@@ -568,8 +626,8 @@ def main():
     # 🔧 UPDATE THESE PATHS TO YOUR XML FILES
     # scene_xml_path = "path/to/your/scene.xml"      # Scene with Panda + environment
     # robot_xml_path = "path/to/your/panda.xml"      # Panda robot only
-    scene_xml_path="/home/aaron/workspace/mujoco-arena/franka_emika_panda/scene.xml"
-    robot_xml_path="/home/aaron/workspace/mujoco-arena/franka_emika_panda/panda.xml"
+    scene_xml_path="/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
+    robot_xml_path="/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/panda.xml"
     
     try:
         # Create demo using your existing modules
@@ -599,13 +657,14 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         print("Make sure all your modules are in the correct paths")
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":
     print("🚀 Complete Example Using Your Existing Modules")
     print("=" * 60)
     print("This demo uses:")
-    print("  ✅ Your RRTplanner.py (JointSpaceRRT)")
+    print("  ✅ Your RRTplanner.py (JointSpaceRRTConnectFailure)")
     print("  ✅ Your collision_checker.py (CollisionChecker)")
     print("  ✅ Your inverse_kinematics.py (IKSolver)")
     print("  ✅ Your abstract_planner.py (AbstractRRTPlanner)")

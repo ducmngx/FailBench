@@ -306,6 +306,7 @@ class JointSpaceRRTConnect(AbstractRRTPlanner):
         print(f"❌ RRT-Connect failed after {self.max_iterations} iterations")
         return None
 
+
 class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
     """
     Overrides AbstractRRTPlanner _find_nearest_node to include failure cost.
@@ -331,8 +332,10 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         # get severity of collision pairs
         # assume severity = 1 for all interactions
         safety_cost = self.failure_weight * prob_collision_pairs.shape[0] # simply the total count of how many estimated collisions there are
-        # print(f"Estimated {prob_collision_pairs.shape[0]} potential collisions, safety cost = {safety_cost}")
-        # print(f"Prob collision pairs: {prob_collision_pairs}\n")
+        
+        print(f"Estimated {prob_collision_pairs.shape[0]} potential collisions, safety cost = {safety_cost}")
+        print(f"Prob collision pairs: {prob_collision_pairs}\n")
+
         return safety_cost
 
 
@@ -352,6 +355,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         for i, node in enumerate(tree):
             dist = self.distance(node.config, target_config) + node.cost
             print(f"Node {i} at {node.config} has distance {dist} (cost {node.cost})")
+            
             if dist < min_distance:
                 min_distance = dist
                 nearest_idx = i
@@ -366,7 +370,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             return 'trapped', None
         
         # mData has the new_config as its ctrl
-        new_config_safety_cost = self.safety_cost(config=new_config)
+        new_config_safety_cost = self.safety_cost(config)
 
         if not self.is_path_valid(nearest_node.config, new_config):
             return 'trapped', None
@@ -374,7 +378,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         # Add new node to tree
         new_node = PlanningNode(new_config, cost=new_config_safety_cost)
 
-        # print(f"{new_node.config} has failure cost {new_node.cost}")
+        print(f"{new_node.config} has failure cost {new_node.cost}")
 
         tree.append(new_node)
         new_idx = len(tree) - 1
@@ -456,3 +460,4 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         
         print(f"❌ RRT-Connect failed after {self.max_iterations} iterations")
         return None
+
