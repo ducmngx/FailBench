@@ -187,8 +187,9 @@ class CollisionEstimator:
         y_overlap = np.clip(np.min([robot_geom_maxs[:, 1], cand_geom_maxs[:, 1]], axis=0) - np.max([robot_geom_mins[:,1], cand_geom_mins[:, 1]], axis=0), min=0)
 
         intersection = x_overlap*y_overlap
-        cand_under_robot_geom = robot_geom_mins[:,2] + self.inflation_radius > cand_geom_maxs[:, 2]
-        intersection = intersection*cand_under_robot_geom
+        
+        # cand_under_robot_geom = robot_geom_mins[:,2] + self.inflation_radius > cand_geom_maxs[:, 2]
+        # intersection = intersection*cand_under_robot_geom
         # area of cand geom
         diff = (cand_geom_maxs - cand_geom_mins)[:, :2]
         cand_area = np.prod(diff, axis=1)

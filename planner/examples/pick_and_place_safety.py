@@ -52,7 +52,7 @@ class PandaPickAndPlace:
             collision_threshold=0.0000005,  # 1cm threshold
             seed=self.seed,
             planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.0008, # 0.008
+            step_size=0.008, # 0.008
             goal_bias=0.8
         )
         
