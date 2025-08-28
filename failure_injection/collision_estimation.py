@@ -1,12 +1,12 @@
 import mujoco
 import numpy as np
 from failure_injection.collision_utils import *
-import traceback
 from tabulate import tabulate
+import itertools
 
 class CollisionEstimator:
 
-    def __init__(self, model, data, failing_joints, method_type="bounding_sphere", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
+    def __init__(self, model, data, failing_joints, method_type="AABB", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
         self.model = model
         self.data = data
         self.method_type = method_type
@@ -16,6 +16,8 @@ class CollisionEstimator:
         self._init_non_robot_geoms()
         self._init_robot_geoms(robot_joints)
         self.all_joint_ids = self._convert_to_joint_ids(failing_joints)
+        # if self.method_type == "AABB":
+        #     self._init_aabb_corners()
 
     def estimate_bodies_in_collision(self, failing_joints="all", failure_type="aggressive", remove_world_body=True):
         """
@@ -29,10 +31,8 @@ class CollisionEstimator:
         else:
             failing_joint_ids = self._convert_to_joint_ids(failing_joints)
 
-        # if isinstance(failing_joint_ids, list):
         failing_geoms = np.unique(np.concatenate([self.robot_joint_geoms[joint_id] for joint_id in failing_joint_ids]))
-        # else:
-        #     failing_geoms = self.robot_joint_geoms[failing_joint_ids]
+        # print("robot geom xpos:", self.data.geom_xpos[failing_geoms])
 
         non_robot_geoms = self.non_robot_geoms
         if remove_world_body:
@@ -43,21 +43,50 @@ class CollisionEstimator:
         # preprocess this in case its slow
         colliding_id_pairs = self._get_colliding_geom_pairs(failing_geoms, non_robot_geoms)
 
-        if self.method_type == "bounding_sphere":
-            # check for collisions using bounding spheres - easier but a more course method.
-            estimated_collisions = self._bounding_sphere_method(colliding_id_pairs)
-        elif self.method_type == "AABB":
+        
+        if self.method_type == "AABB":
             # check for collisions using AABB - not implemented but could be a faster and more finer method.
-            estimated_collisions = self._axis_aligned_bounding_box_method(colliding_id_pairs)
+            estimated_collisions, collision_area, total_cand_area, total_robot_area = self._axis_aligned_bounding_box_method(colliding_id_pairs)
+        elif self.method_type == "bounding_sphere":
+            # check for collisions using bounding spheres - easier but a more course method.
+            _, _, _ = self._bounding_sphere_method(colliding_id_pairs)
         else:
             raise NotImplementedError()
         
         # save current estimate as reference
         self.current_collision_pairs = estimated_collisions 
+        self.current_collision_area = collision_area
+        self.current_total_cand_area = total_cand_area
+        self.current_total_robot_area = total_robot_area 
 
-        # given geom collision pairs, get the non-robot ones and return their body ids. 
-        estimated_collision_pairs_body_ids = np.unique(self.model.geom_bodyid[estimated_collisions], axis=0)
-        return estimated_collision_pairs_body_ids
+        # given geom id pairs and collision probability of each pair, find the bodies the geoms belong to
+        # for each body pair (robot-object) prob of collision =  total sum of intersected area / total sum of geom area
+        # prob = max(intersection/object_area, intersection/robot_area)
+        estimated_body_id_pairs = self.model.geom_bodyid[estimated_collisions]
+        sorting_idx = np.lexsort((estimated_body_id_pairs[:,1], estimated_body_id_pairs[:,0]))
+        sorted_collision_pairs_bids = estimated_body_id_pairs[sorting_idx]
+        sorted_merged_cand_areas = np.stack((collision_area[sorting_idx], total_cand_area[sorting_idx]), axis=1)
+        sorted_merged_robot_areas = np.stack((collision_area[sorting_idx], total_robot_area[sorting_idx]), axis=1)
+
+        unique_body_pairs, unique_idx = np.unique(sorted_collision_pairs_bids, return_index=True, axis=0)
+
+        prob_of_cand_collision_over_geoms_in_body = np.fromiter((np.power(intersect_area.sum(axis=0), [1,-1]).prod() for intersect_area in  np.split(sorted_merged_cand_areas, unique_idx[1:])), np.float64, count=len(unique_body_pairs))
+        prob_of_robot_collision_over_geoms_in_body = np.fromiter((np.power(intersect_area.sum(axis=0), [1,-1]).prod() for intersect_area in  np.split(sorted_merged_robot_areas, unique_idx[1:])), np.float64, count=len(unique_body_pairs))
+        prob_of_collision_over_geoms_in_body = np.max((prob_of_cand_collision_over_geoms_in_body, prob_of_robot_collision_over_geoms_in_body), 0)
+        
+        return unique_body_pairs, prob_of_collision_over_geoms_in_body
+
+    def forward_kinematics(self, config):
+        """
+        Very similar to planner.collision.collision_checker.set_robot_configuration_direct, 
+            except this calls mj_kinematics (only updates xpos and xmat of all bodies/geoms, ie. stage 2 of mujoco pipeline)
+            while that runs forward (bunch of other things, stages 2-22 of mujoco pipeline)
+        """
+        if len(config) > len(self.data.qpos):
+            raise ValueError(f"Config length {len(config)} > scene qpos length {len(self.data.qpos)}")
+        
+        self.data.qpos[:len(config)] = config
+        mujoco.mj_kinematics(self.model, self.data)
 
     def _init_non_robot_geoms(self):
         non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
@@ -103,12 +132,7 @@ class CollisionEstimator:
         return geom_id_pairs
 
     def _bounding_sphere_method(self, geom_pairs):
-        """
-        Given (N,2) geom_pairs with the first column representing geoms of the failing bodies and the second column representing the candidate geoms that the failing geoms will collide with,
-        this method will return the pairs of geoms that will collide using bounding spheres.
-        Essentially, if a candidate geom's bounding sphere is below the failing geom's inflated bounding sphere, then the two are estimated to be in collision, given failure.
-        """
-
+        raise NotImplementedError("probability of collision not implemented. use method_type=AABB for now.")
         # get bounding sphere and world coordinates of robot geoms
         robot_geom_coords = self.data.geom_xpos[geom_pairs[:,0]]
         robot_geom_bounding_radius = self.model.geom_rbound[geom_pairs[:,0]] + self.inflation_radius
@@ -121,7 +145,8 @@ class CollisionEstimator:
         dx = (candidate_geom_coords[:,0] -robot_geom_coords[:, 0])
         dy = (candidate_geom_coords[:,1] -robot_geom_coords[:, 1])
         cond = (dx**2 + dy**2 <= (robot_geom_bounding_radius + candidate_geom_bounding_radius)**2) & (candidate_geom_coords[:, 2] - candidate_geom_bounding_radius <= robot_geom_coords[:,2]) 
-        return geom_pairs[cond]
+        
+        return geom_pairs[cond], np.ones()
 
     def _convert_to_joint_ids(self, joint_names):
         if isinstance(joint_names, list):
@@ -130,8 +155,54 @@ class CollisionEstimator:
             assert isinstance(joint_names, str) 
             return [self.robot_joint_ids[joint_names]]
     
+    # def _init_aabb_corners(self):
+    #     robot_aabb = 
+
     def _axis_aligned_bounding_box_method(self, geom_pairs):
-        raise NotImplementedError()
+        # precompute these
+        robot_geom_aabb = self.model.geom_aabb[geom_pairs[:,0]]
+        corner_scale = np.array(list(itertools.product([-1,1], repeat=3)))[None]
+        robot_geom_corners = robot_geom_aabb[:, None, :3] + (corner_scale*robot_geom_aabb[:, None, 3:])
+
+        robot_geom_coor = self.data.geom_xpos[geom_pairs[:,0]]
+        robot_geom_rot_mat = self.data.geom_xmat[geom_pairs[:,0]].reshape(-1, 3, 3)
+
+        geom_world_coor = robot_geom_corners @ robot_geom_rot_mat.transpose(0,2,1) + robot_geom_coor[:, None]
+        robot_geom_mins = geom_world_coor.min(axis=1)
+        robot_geom_maxs = geom_world_coor.max(axis=1)
+        
+
+        cand_geom_aabb = self.model.geom_aabb[geom_pairs[:,1]]
+        cand_geom_corners = cand_geom_aabb[:, None, :3] + (corner_scale*cand_geom_aabb[:, None, 3:])
+
+        cand_geom_coor = self.data.geom_xpos[geom_pairs[:,1]]
+        cand_geom_rot_mat = self.data.geom_xmat[geom_pairs[:,1]].reshape(-1, 3, 3)
+
+        geom_world_coor = cand_geom_corners @ cand_geom_rot_mat.transpose(0,2,1) + cand_geom_coor[:, None]
+        cand_geom_mins = geom_world_coor.min(axis=1)
+        cand_geom_maxs = geom_world_coor.max(axis=1)
+
+        # prob of interaction = area of intersection in x-y axis / area of cand geom
+        x_overlap = np.clip(np.min([robot_geom_maxs[:, 0], cand_geom_maxs[:, 0]], axis=0) - np.max([robot_geom_mins[:,0], cand_geom_mins[:, 0]], axis=0), min=0)
+        y_overlap = np.clip(np.min([robot_geom_maxs[:, 1], cand_geom_maxs[:, 1]], axis=0) - np.max([robot_geom_mins[:,1], cand_geom_mins[:, 1]], axis=0), min=0)
+
+        intersection = x_overlap*y_overlap
+        cand_under_robot_geom = robot_geom_mins[:,2] + self.inflation_radius > cand_geom_maxs[:, 2]
+        intersection = intersection*cand_under_robot_geom
+        # area of cand geom
+        diff = (cand_geom_maxs - cand_geom_mins)[:, :2]
+        cand_area = np.prod(diff, axis=1)
+
+        # area of robot geoms
+        diff = (robot_geom_maxs - robot_geom_mins)[:, :2]
+        robot_area = np.prod(diff, axis=1)
+
+        # prob = intersection / area
+        possible_collision = intersection > 0
+        return geom_pairs[possible_collision], intersection[possible_collision], cand_area[possible_collision], robot_area[possible_collision]
+        
+
+
 
 
 def fancy_test_collision_estimator():
