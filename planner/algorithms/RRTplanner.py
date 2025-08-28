@@ -319,13 +319,37 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
 
         self.mjData = mujoco.MjData(self.model)
         
-        self.failure_weight = 0.05
+        self.failure_weight = 0.01
+        self.failure_threshold = 0.2 # max_severity = 10, weight=0.01, 10*0.01 = 0.1
         failing_joints = [f"joint{i}" for i in range(1,8)]
         self.collision_estimator = CollisionEstimator(self.model, self.mjData, inflation_radius=0, failing_joints=failing_joints)
         self.count = 0
-        self.total_safety_cost_time = 0
+        self.total_fail_cost_time = 0
+        self.target_bids = [12, 14] # hack
+        self.noisy_steer_std = 1e-3
 
-    def safety_cost(self, config=None):
+
+    def noisy_steer(self, from_config: np.ndarray, to_config: np.ndarray, stuck_count: int) -> np.ndarray:
+        """Steer in joint space with noise"""
+        direction = to_config - from_config
+        distance = np.linalg.norm(direction)
+        if distance <= self.step_size:
+            return to_config
+        else:
+            unit_direction = direction / distance
+            noise = self.rng.normal(0, self.noisy_steer_std*(10**stuck_count), unit_direction.shape)
+            return from_config + self.step_size * (unit_direction + noise)
+        
+    def is_valid_config(self, config):
+        """Check if configuration is collision-free AND safe"""
+        is_collision_free = not self.collision_checker.check_collisions(
+            robot_config=config,
+            threshold=self.collision_threshold
+        )
+        is_safe = self.impact_of_failure(config) < self.failure_threshold
+        return is_collision_free and is_safe 
+    
+    def impact_of_failure(self, config=None):
         """
         Calculates \\sum_rj \\sum_ei {weight * P(x, rj, ei | F) * S(rj, ei) }  
         """
@@ -336,17 +360,24 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         body_id_pairs, prob_collision = self.collision_estimator.estimate_bodies_in_collision()
         # body_id_pairs: (N, 2), prob_collision: (N,)
         # get severity of collision via LLM/table using body_id_pairs
-        # for now assume severity = 1 for all pairs
+        # for now assume severity = 1 for all pairs except for when cand_body_id = 13 (object2)
+        # also filter out target objects (object1, object3) bids = 12, 14 i think
+        mask = ~np.isin(body_id_pairs[:,1], self.target_bids)
+        body_id_pairs = body_id_pairs[mask]
+        prob_collision = prob_collision[mask]
+
         severity = np.ones(shape=len(body_id_pairs), dtype=np.float64)
-        safety_cost = self.failure_weight * (prob_collision * severity).sum()
+        severity[body_id_pairs[:,1] == 13] = 10 # max severity that LLM will give
+
+        cost = self.failure_weight * (prob_collision * severity).sum()
         elapsed_time = time.perf_counter() - begin_time
-        self.total_safety_cost_time  += elapsed_time
-        return safety_cost
+        self.total_fail_cost_time  += elapsed_time
+        return cost
 
     def extend_tree(self, tree: List, parents: dict, target_config: np.ndarray) -> Tuple[str, Optional[int]]:
         """
-        Extend tree toward target configuration.
-        Added safety cost to each node.
+        Extend tree toward target configuration using noisy steering.
+        Added failure cost to each node.
         Returns: (status, node_index)
         status: 'reached', 'advanced', or 'trapped'
         """
@@ -358,29 +389,29 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         min_distance = float('inf')
         for i, node in enumerate(tree):
             dist = self.distance(node.config, target_config) + node.cost
-            print(f"Node {i} at {node.config} has distance {dist} (cost {node.cost})")
-            
             if dist < min_distance:
                 min_distance = dist
                 nearest_idx = i
         
         nearest_node = tree[nearest_idx]
-        
+        nearest_node.count += 1
+        print(f"Nearest node {nearest_idx} at {nearest_node.config} has distance {min_distance} (cost {nearest_node.cost})")
+            
         # Steer toward target
-        new_config = self.steer(nearest_node.config, target_config)
+        new_config = self.noisy_steer(nearest_node.config, target_config, nearest_node.count)
         
         # Check if new configuration and path are valid
         if not self.is_valid_config(new_config):
             return 'trapped', None
         
         # mData has the new_config as its ctrl
-        new_config_safety_cost = self.safety_cost(new_config)
+        new_config_cost_of_failure = self.impact_of_failure(new_config)
 
         if not self.is_path_valid(nearest_node.config, new_config):
             return 'trapped', None
         
         # Add new node to tree
-        new_node = PlanningNode(new_config, cost=new_config_safety_cost)
+        new_node = PlanningNode(new_config, cost=new_config_cost_of_failure)
 
         # print(f"new node - {new_node.config} has failure cost {new_node.cost}")
 
@@ -393,22 +424,22 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             return 'reached', new_idx
         else:
             return 'advanced', new_idx
-        
+
     def plan(self, start_config: np.ndarray, goal_config: np.ndarray, 
             frame_name: str = "end_effector") -> Optional[List[np.ndarray]]:
         """
         Plan path using RRT-Connect algorithm with proper path reconstruction.
-        Cost of each node in tree is the safety cost for that configuration.
+        Cost of each node in tree is the cost of failure at that configuration.
         """
         print(f"🔄 Starting RRT-Connect planning...")
         self.collision_estimator.count = 0
         self.rng = np.random.RandomState(self.seed)
 
         # Initialize trees
-        self.tree = [PlanningNode(start_config, cost=self.safety_cost(start_config))]
+        self.tree = [PlanningNode(start_config, cost=self.impact_of_failure(start_config))]
         self.tree_parents = {0: None}
         
-        self.goal_tree = [PlanningNode(goal_config, cost=self.safety_cost(goal_config))]
+        self.goal_tree = [PlanningNode(goal_config, cost=self.impact_of_failure(goal_config))]
         self.goal_tree_parents = {0: None}
         
         # Track which tree is the start tree (important for path reconstruction)
@@ -442,7 +473,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
                         print(f"✅ Goal reached in {iteration + 1} iterations!")
                         if self.count > 0:
                             print("number of calls to collision_estimator:", self.count)
-                            print(f"avg time for safety: {self.total_safety_cost_time/self.count:.3f}s")
+                            print(f"avg time for impact_of_failure(): {self.total_fail_cost_time/self.count:.5f}s")
                         return self.reconstruct_path(
                             self.tree, self.goal_tree, 
                             self.tree_parents, self.goal_tree_parents,
@@ -456,7 +487,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
                         print(f"✅ Trees connected in {iteration + 1} iterations!")
                         if self.count > 0:
                             print("number of calls to collision_estimator:", self.count)
-                            print(f"avg time for safety: {self.total_safety_cost_time/self.count:.3f}s")
+                            print(f"avg time for impact_of_failure(): {self.total_fail_cost_time/self.count:.5f}s")
                         return self.reconstruct_path(
                             self.tree, self.goal_tree,
                             self.tree_parents, self.goal_tree_parents,

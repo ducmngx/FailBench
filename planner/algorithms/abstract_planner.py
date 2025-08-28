@@ -16,6 +16,7 @@ class PlanningNode:
     config: np.ndarray
     parent: Optional['PlanningNode'] = None
     cost: float = 0.0
+    count: int = -1
 
     def get_path_to_root(self) -> List['PlanningNode']:
         """Get path from this node back to root."""
