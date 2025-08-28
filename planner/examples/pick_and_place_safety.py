@@ -11,6 +11,8 @@ import time
 from typing import Optional
 from scipy.spatial.transform import Rotation as R
 from typing import List, Optional, Tuple, Callable, Union
+import os
+import traceback
 # Import YOUR existing modules
 from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
 from planner.collision.collision_checker import CollisionChecker  
@@ -50,7 +52,7 @@ class PandaPickAndPlace:
             collision_threshold=0.0000005,  # 1cm threshold
             seed=self.seed,
             planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.008,
+            step_size=0.0008, # 0.008
             goal_bias=0.8
         )
         
@@ -834,8 +836,18 @@ def main():
     """Main function."""
     
     # Update these paths to your XML files
-    scene_xml_path = "/home/aaron/workspace/mujoco-arena/franka_emika_panda/scene.xml"
-    robot_xml_path = "/home/aaron/workspace/mujoco-arena/franka_emika_panda/panda.xml"
+    # automated adding of paths 
+    user =  os.getenv("USER")
+    if user == "aaron":
+        path = "/home/aaron/workspace/mujoco-arena"
+    elif user == "saghani":
+        path = "/Users/saghani/Workspace/Research/GenAISim"
+    else:
+        # To new user: your path here
+        path = ""
+
+    scene_xml_path = os.path.join(path, "franka_emika_panda/scene.xml")
+    robot_xml_path = os.path.join(path, "franka_emika_panda/panda.xml")
     
     try:
         # Create pick and place demo
@@ -854,6 +866,7 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         print("Make sure all your modules are in the correct paths")
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":

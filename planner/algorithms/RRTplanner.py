@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import random
 from enum import Enum
+import time
+
 # Assuming imports from the IK module
 # from inverse_kinematics import IKSolver, EndEffectorTarget, IKConfig, IKResult, solve_ik_for_planner
 from planner.kinematics.inverse_kinematics import *
@@ -319,25 +321,27 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         
         self.failure_weight = 0.05
         failing_joints = [f"joint{i}" for i in range(1,8)]
-        self.collision_estimator = CollisionEstimator(self.model, self.mjData, failing_joints=failing_joints)
+        self.collision_estimator = CollisionEstimator(self.model, self.mjData, inflation_radius=0, failing_joints=failing_joints)
+        self.count = 0
+        self.total_safety_cost_time = 0
 
     def safety_cost(self, config=None):
         """
         Calculates \\sum_rj \\sum_ei {weight * P(x, rj, ei | F) * S(rj, ei) }  
         """
+        begin_time = time.perf_counter()
+        self.count += 1
         if config is not None: # similar to how collision_checker does it
-            self.collision_checker.set_robot_configuration_direct(config)
-        prob_collision_pairs = self.collision_estimator.estimate_bodies_in_collision()
-        # prob_collision_pairs: (N, 2)
-        # get severity of collision pairs
-        # assume severity = 1 for all interactions
-        safety_cost = self.failure_weight * prob_collision_pairs.shape[0] # simply the total count of how many estimated collisions there are
-        
-        print(f"Estimated {prob_collision_pairs.shape[0]} potential collisions, safety cost = {safety_cost}")
-        print(f"Prob collision pairs: {prob_collision_pairs}\n")
-
+            self.collision_estimator.forward_kinematics(config)
+        body_id_pairs, prob_collision = self.collision_estimator.estimate_bodies_in_collision()
+        # body_id_pairs: (N, 2), prob_collision: (N,)
+        # get severity of collision via LLM/table using body_id_pairs
+        # for now assume severity = 1 for all pairs
+        severity = np.ones(shape=len(body_id_pairs), dtype=np.float64)
+        safety_cost = self.failure_weight * (prob_collision * severity).sum()
+        elapsed_time = time.perf_counter() - begin_time
+        self.total_safety_cost_time  += elapsed_time
         return safety_cost
-
 
     def extend_tree(self, tree: List, parents: dict, target_config: np.ndarray) -> Tuple[str, Optional[int]]:
         """
@@ -370,7 +374,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             return 'trapped', None
         
         # mData has the new_config as its ctrl
-        new_config_safety_cost = self.safety_cost(config)
+        new_config_safety_cost = self.safety_cost(new_config)
 
         if not self.is_path_valid(nearest_node.config, new_config):
             return 'trapped', None
@@ -378,7 +382,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         # Add new node to tree
         new_node = PlanningNode(new_config, cost=new_config_safety_cost)
 
-        print(f"{new_node.config} has failure cost {new_node.cost}")
+        # print(f"new node - {new_node.config} has failure cost {new_node.cost}")
 
         tree.append(new_node)
         new_idx = len(tree) - 1
@@ -397,7 +401,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         Cost of each node in tree is the safety cost for that configuration.
         """
         print(f"🔄 Starting RRT-Connect planning...")
-
+        self.collision_estimator.count = 0
         self.rng = np.random.RandomState(self.seed)
 
         # Initialize trees
@@ -436,6 +440,9 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
                     if status2 == 'reached':
                         # Trees connected!
                         print(f"✅ Goal reached in {iteration + 1} iterations!")
+                        if self.count > 0:
+                            print("number of calls to collision_estimator:", self.count)
+                            print(f"avg time for safety: {self.total_safety_cost_time/self.count:.3f}s")
                         return self.reconstruct_path(
                             self.tree, self.goal_tree, 
                             self.tree_parents, self.goal_tree_parents,
@@ -447,6 +454,9 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
                     # Check if the trees can be directly connected
                     if self.is_path_valid(self.tree[new_idx1].config, self.goal_tree[new_idx2].config):
                         print(f"✅ Trees connected in {iteration + 1} iterations!")
+                        if self.count > 0:
+                            print("number of calls to collision_estimator:", self.count)
+                            print(f"avg time for safety: {self.total_safety_cost_time/self.count:.3f}s")
                         return self.reconstruct_path(
                             self.tree, self.goal_tree,
                             self.tree_parents, self.goal_tree_parents,
