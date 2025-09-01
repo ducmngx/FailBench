@@ -18,6 +18,7 @@ from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, J
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
+from failure_injection.collision_estimation import CollisionEstimator
 
 class PandaPickAndPlace:
     """
@@ -45,24 +46,29 @@ class PandaPickAndPlace:
         # Initialize your planning modules
         self.ik_solver = IKSolver(self.robot_model)
         self.collision_checker = CollisionChecker(self.scene_model, self.robot_model)
+        failing_joints = [f"joint{i}" for i in range(1,8)]
+        failing_joints += ['finger_joint1', 'finger_joint2']
+        self.collision_estimator = CollisionEstimator(self.scene_model, self.scene_data, inflation_radius=0, failing_joints=failing_joints, robot_joints=failing_joints)
+        
         self.rrt_planner = JointSpaceRRTConnectFailure(
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
             collision_threshold=0.0000005,  # 1cm threshold
             seed=self.seed,
+            collision_estimator=self.collision_estimator,
             planning_space=PlanningSpace.JOINT_SPACE,
             step_size=0.008, # 0.008
             goal_bias=0.8
         )
         
         self.robot_dof = self.robot_model.njnt
+
         self.current_path = None
         self.current_viewer = None
         
         # Set initial pose
         self._set_home_position()
-        
         # # ENHANCED GRIPPER DETECTION INCLUDING TENDON-BASED
         # print("\n🔍 Enhanced gripper detection (including tendon-based)...")
         # if not self.quick_fix_gripper_indices():
@@ -80,6 +86,8 @@ class PandaPickAndPlace:
         home_config = np.zeros(self.robot_dof)
         self.scene_data.qpos[:self.robot_dof] = home_config
         mujoco.mj_forward(self.scene_model, self.scene_data)
+        self.collision_estimator.forward_kinematics(home_config)
+        self.collision_estimator.post_mj_forward_init()
     
     def get_current_config(self) -> np.ndarray:
         """Get current robot configuration."""
