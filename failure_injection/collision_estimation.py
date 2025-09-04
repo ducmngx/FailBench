@@ -6,9 +6,9 @@ import itertools
 
 class CollisionEstimator:
 
-    def __init__(self, model, data, failing_joints, method_type="AABB", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
+    def __init__(self, model, failing_joints, method_type="AABB", inflation_radius=0, robot_root_name="link0", robot_joints=[f"joint{i}" for i in range(1,8)]):
         self.model = model
-        self.data = data
+        self.data = mujoco.MjData(model)
         self.method_type = method_type
         self.inflation_radius = inflation_radius
         self.collision_function = None
@@ -98,8 +98,9 @@ class CollisionEstimator:
             raise ValueError(f"Config length {len(config)} > scene qpos length {len(self.data.qpos)}")
         
         self.data.qpos[:len(config)] = config
-        mujoco.mj_kinematics(self.model, self.data)     # updates data xpos / xmat
-        mujoco.mj_comPos(self.model, self.data)         # updated jacobian  maybe not required
+        # mujoco.mj_kinematics(self.model, self.data)     # updates data xpos / xmat
+        # mujoco.mj_comPos(self.model, self.data)         # updated jacobian  maybe not required
+        mujoco.mj_forward(self.model, self.data)
 
     def post_mj_forward_init(self):
         self._init_AABB_variables()
@@ -124,14 +125,54 @@ class CollisionEstimator:
         elif aggregate_type == "none":
             return robot_dofs_mat
     
+    # def _init_non_robot_geoms(self, exclude_world_body=True):
+    #     non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
+    #     non_robot_geoms = get_bodies_geoms(self.model, non_robot_bodies, keep_seperate=False)
+
+    #     if exclude_world_body:
+    #         body_names = np.array([mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in self.model.geom_bodyid[non_robot_geoms]])
+    #         non_robot_geoms = non_robot_geoms[body_names != "world"]
+    #         non_robot_geoms = non_robot_geoms[body_names != "object3_geom"]
+
+
+    #     # if exclude_world_body or exclude_objects:
+    #     #     body_names = np.array([mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, bid) 
+    #     #                         for bid in self.model.geom_bodyid[non_robot_geoms]])
+            
+    #     #     # Build exclusion mask
+    #     #     mask = np.ones(len(non_robot_geoms), dtype=bool)
+            
+    #     #     if exclude_world_body:
+    #     #         mask &= (body_names != "world")
+                
+    #     #     if exclude_objects:
+    #     #         for obj_name in exclude_objects:
+    #     #             mask &= (body_names != obj_name)
+            
+    #         # non_robot_geoms = non_robot_geoms[mask]
+
+    #     print(f"Non Robot Geoms: {[mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, gid) for gid in non_robot_geoms]}")
+    #     return non_robot_geoms
+
     def _init_non_robot_geoms(self, exclude_world_body=True):
         non_robot_bodies = get_non_robot_bodies(self.model, self.robot_root_name)
         non_robot_geoms = get_bodies_geoms(self.model, non_robot_bodies, keep_seperate=False)
-
+        
         if exclude_world_body:
-            body_names = np.array([mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in self.model.geom_bodyid[non_robot_geoms]])
-            non_robot_geoms = non_robot_geoms[body_names != "world"]
-
+            # Get body names for each geometry
+            body_names = np.array([
+                mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, bid) 
+                for bid in self.model.geom_bodyid[non_robot_geoms]
+            ])
+            
+            # Create boolean mask for filtering
+            mask = (body_names != "world") & (body_names != "object3_geom") & (body_names != "object3")
+            
+            # Apply the mask to filter geometries
+            non_robot_geoms = non_robot_geoms[mask]
+    
+        
+        print(f"Non Robot Geoms: {[mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, gid) for gid in non_robot_geoms]}")
         return non_robot_geoms
 
     def _init_robot_geoms(self, all_robot_joints_by_name):
@@ -300,101 +341,6 @@ class CollisionEstimator:
 
         # return only the places where intersection > 0
         return geom_pairs[possible_collision], intersection[possible_collision], cand_area[possible_collision], robot_area[possible_collision], dintersection_dnv[possible_collision]
-        
-
-def fancy_test_collision_estimator():
-    """Physics-based test of collision estimation for Franka joints."""
-
-    print("\n🎯 Collision Estimation Test")
-    print("=" * 50)
-
-    # Phase 1: Load model
-    print("\n" + "="*30)
-    print("PHASE 1: LOAD MODEL")
-    print("="*30)
-
-    robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
-    try:
-        model = mujoco.MjModel.from_xml_path(robot_xml_path)
-        data = mujoco.MjData(model)
-        mujoco.mj_forward(model, data)  # Update kinematics
-        print("✅ Model loaded successfully")
-    except Exception as e:
-        print(f"❌ Failed to load model: {e}")
-        return False
-
-    # Phase 2: Initialize estimator
-    print("\n" + "="*30)
-    print("PHASE 2: INITIALIZE ESTIMATOR")
-    print("="*30)
-
-    try:
-        failing_joints = [f"joint{i}" for i in range(1,8)]
-        estimator = CollisionEstimator(model, data, failing_joints=failing_joints)
-        print("✅ Collision estimator initialized")
-    except Exception as e:
-        print(f"❌ Failed to initialize estimator: {e}")
-        return False
-
-    # Phase 3: Single joint collision test
-    print("\n" + "="*30)
-    print("PHASE 3: SINGLE JOINT COLLISION TEST")
-    print("="*30)
-
-    try:
-        collision_pair_body_ids = estimator.estimate_bodies_in_collision("joint1", remove_world_body=False)
-        robot_body_names = [
-            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-            for bid in collision_pair_body_ids[:, 0]
-        ]
-        world_body_names = [
-            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-            for bid in collision_pair_body_ids[:, 1]
-        ]
-
-        if len(robot_body_names) == 0:
-            print("⚠️ No collisions detected for joint1")
-        else:
-            table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
-            print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
-
-        print("✅ Single joint collision test completed")
-    except Exception as e:
-        print(f"❌ Single joint collision estimation failed: {e}")
-        return False
-
-    # Phase 4: Multiple joint collision test
-    print("\n" + "="*30)
-    print("PHASE 4: MULTIPLE JOINT COLLISION TEST")
-    print("="*30)
-
-    try:
-        all_joints = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"]
-        collision_pair_body_ids = estimator.estimate_bodies_in_collision(all_joints, remove_world_body=True)
-        robot_body_names = [
-            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-            for bid in collision_pair_body_ids[:, 0]
-        ]
-        world_body_names = [
-            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-            for bid in collision_pair_body_ids[:, 1]
-        ]
-
-        if len(robot_body_names) == 0:
-            print("⚠️ No collisions detected for multiple joints")
-        else:
-            table_data = [[rb, wb] for rb, wb in zip(robot_body_names, world_body_names)]
-            print(tabulate(table_data, headers=["🤖 Robot Body Part", "🌍 Collides With"], tablefmt="fancy_grid"))
-
-        print("✅ Multiple joints collision test completed")
-    except Exception as e:
-        print(f"❌ Multiple joint collision estimation failed: {e}")
-        return False
-
-    # Success
-    print("\n🎉 Collision Estimator Test Completed Successfully!")
-    return True
-
 
 def softmax_beta(x, axis, max=True, beta=100):
     sgn = +1.0 if max else -1.0
@@ -410,7 +356,3 @@ def log_sum_exp_beta(x, axis, max=True, beta=100):
     a = np.max(y, axis=axis, keepdims=True)
     out = sgn * (a + np.log(np.sum(np.exp(y - a), axis=axis, keepdims=True))) / beta
     return out.squeeze(axis)
-
-
-if __name__ == "__main__":
-    fancy_test_collision_estimator()
