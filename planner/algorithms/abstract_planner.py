@@ -44,9 +44,9 @@ class AbstractRRTPlanner(ABC):
         ik_solver: IKSolver,
         planning_space: PlanningSpace = PlanningSpace.JOINT_SPACE,
         max_iterations: int = 5000,
-        step_size: float = 0.008,
-        goal_tolerance: float = 0.01,
-        goal_bias: float = 0.8
+        step_size: float = 0.0005,
+        goal_tolerance: float = 0.1,
+        goal_bias: float = 0.7
     ):
         self.model = model
         self.ik_solver = ik_solver

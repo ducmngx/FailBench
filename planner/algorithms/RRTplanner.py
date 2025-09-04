@@ -15,6 +15,7 @@ from planner.algorithms.abstract_planner import *
 # from collision_checker import CollisionChecker
 from planner.collision.collision_checker import CollisionChecker
 from failure_injection.collision_estimation import CollisionEstimator
+from failure_injection.optimized_collision_estimation import OptimizedCollisionEstimator
 
 class JointSpaceRRT(AbstractRRTPlanner):
     """RRT planner operating in joint space."""
@@ -319,7 +320,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         super().__init__(scene_model, robot_model, ik_solver, collision_threshold, seed=seed, **kwargs)
 
         self.failure_weight = 0.01
-        self.failure_threshold = 0.1 # max_severity = 10, weight=0.01, 10*0.01 = 0.1
+        self.failure_threshold = 10 # max_severity = 10, weight=0.01, 10*0.01 = 0.1
         self.collision_estimator = collision_estimator 
         self.count = 0                  # debugging
         self.total_fail_cost_time = 0   # debugging 
@@ -369,11 +370,11 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             
             if status1 != 'trapped':
                 # sample tree nodes not based on the latest node, since its noisy, its not guaranteed to be the best node. 
-                sample_weights = np.array([1/(node.cost + 1e-9) for node in self.tree])
-                sample_weights = sample_weights / np.sum(sample_weights)
-                new_config = self.rng.choice(self.tree, p=sample_weights).config
+                # sample_weights = np.array([1/(node.cost + 1e-9) for node in self.tree])
+                # sample_weights = sample_weights / np.sum(sample_weights)
+                # new_config = self.rng.choice(self.tree, p=sample_weights).config
                 # Try to connect second tree to the new node
-                # new_config = self.tree[new_idx1].config
+                new_config = self.tree[new_idx1].config
                 
                 # Keep extending second tree toward new node until trapped or reached
                 while True:
@@ -394,16 +395,16 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
                         break
                     
                     # Check if the trees can be directly connected
-                    if self.is_path_valid(self.tree[new_idx1].config, self.goal_tree[new_idx2].config):
-                        print(f"✅ Trees connected in {iteration + 1} iterations!")
-                        if self.count > 0:
-                            print("number of calls to collision_estimator:", self.count)
-                            print(f"avg time for impact_of_failure(): {self.total_fail_cost_time/self.count:.5f}s")
-                        return self.reconstruct_path(
-                            self.tree, self.goal_tree,
-                            self.tree_parents, self.goal_tree_parents,
-                            new_idx1, new_idx2, tree_is_start
-                        )
+                    # if self.is_path_valid(self.tree[new_idx1].config, self.goal_tree[new_idx2].config):
+                    #     print(f"✅ Trees connected in {iteration + 1} iterations!")
+                    #     if self.count > 0:
+                    #         print("number of calls to collision_estimator:", self.count)
+                    #         print(f"avg time for impact_of_failure(): {self.total_fail_cost_time/self.count:.5f}s")
+                    #     return self.reconstruct_path(
+                    #         self.tree, self.goal_tree,
+                    #         self.tree_parents, self.goal_tree_parents,
+                    #         new_idx1, new_idx2, tree_is_start
+                    #     )
             
             # Swap trees for next iteration (alternate growth direction)
             self.tree, self.goal_tree = self.goal_tree, self.tree
@@ -430,20 +431,22 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         for i, node in enumerate(tree):
             euc_dist = self.distance(node.config, target_config)
             fail_cost = self.impact_of_failure(node.config)
+            print(f"Node {i} at {node.config} has failure cost {fail_cost} and euc_dist {euc_dist}")
             dist =  euc_dist + fail_cost
             if dist < min_distance:
                 min_distance = dist
+                min_euc = euc_dist
                 nearest_idx = i
                 min_fail_cost = fail_cost
         
         nearest_node = tree[nearest_idx]
         nearest_node.count += 1
-        print(f"Nearest node {nearest_idx} at {nearest_node.config} has distance {min_distance} (cost {min_fail_cost})")
+        print(f"Nearest node {nearest_idx}/{len(tree)} at {nearest_node.config} has distance {min_euc}, total cost {min_distance} (failure cost {min_fail_cost})")
         
         # Steer toward target
         new_config = self.steer(nearest_node.config, target_config)
-        # steer with gradients from failure
-        new_config = self.steer_with_fail_grad(nearest_node.config)
+        # # steer with gradients from failure
+        # new_config = self.steer_with_fail_grad(nearest_node.config)
 
         # Check if new configuration and path are valid
         if not self.is_valid_config(new_config):
@@ -494,8 +497,8 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             robot_config=config,
             threshold=self.collision_threshold
         )
-        is_safe = self.impact_of_failure(config) < self.failure_threshold
-        return is_collision_free and is_safe 
+        # is_safe = self.impact_of_failure(config) < self.failure_threshold
+        return is_collision_free #and is_safe 
     
     def impact_of_failure(self, config=None, calculate_grads=False):
         """
@@ -505,6 +508,7 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         self.count += 1
         if config is not None: # similar to how collision_checker does it
             self.collision_estimator.forward_kinematics(config)
+
         body_id_pairs, prob_collision, grads = self.collision_estimator.estimate_bodies_in_collision(calculate_grads=calculate_grads)
         # body_id_pairs: (N, 2), prob_collision: (N,), grads: (N, njnt)
         # get severity of collision via LLM/table using body_id_pairs
@@ -518,6 +522,8 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
         severity = np.ones(shape=len(body_id_pairs), dtype=np.float64)
         severity[body_id_pairs[:,1] == 13] = 10 # max severity that LLM will give
 
+        # print(f"impact_of_failure call {self.count}:")
+        # print(f"Failure weight {self.failure_weight}, prob_collision: {prob_collision}, severity: {severity}")
         cost = self.failure_weight * (prob_collision * severity).sum()
         grads = self.failure_weight * (grads*severity[:, None]).sum(axis=0)
         elapsed_time = time.perf_counter() - begin_time
@@ -526,5 +532,3 @@ class JointSpaceRRTConnectFailure(JointSpaceRRTConnect):
             return cost, grads
         else:
             return cost
-
-   

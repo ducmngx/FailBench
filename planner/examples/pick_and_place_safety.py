@@ -11,10 +11,11 @@ import time
 from typing import Optional
 from scipy.spatial.transform import Rotation as R
 from typing import List, Optional, Tuple, Callable, Union
-import os
-import traceback
-# Import YOUR existing modules
-from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
+# Import existing modules
+from planner.algorithms.RRTplanner import *
+from planner.algorithms.TRRTFailure import *
+from planner.algorithms.STOMP import *
+# from planner.algorithms.RRTStar import JointSpaceRRTStarFailure
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
@@ -47,28 +48,97 @@ class PandaPickAndPlace:
         self.ik_solver = IKSolver(self.robot_model)
         self.collision_checker = CollisionChecker(self.scene_model, self.robot_model)
         failing_joints = [f"joint{i}" for i in range(1,8)]
-        failing_joints += ['finger_joint1', 'finger_joint2']
-        self.collision_estimator = CollisionEstimator(self.scene_model, self.scene_data, inflation_radius=0, failing_joints=failing_joints, robot_joints=failing_joints)
-        
-        self.rrt_planner = JointSpaceRRTConnectFailure(
-            scene_model=self.scene_model,
-            robot_model=self.robot_model,
-            ik_solver=self.ik_solver,
-            collision_threshold=0.0000005,  # 1cm threshold
-            seed=self.seed,
-            collision_estimator=self.collision_estimator,
-            planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.008, # 0.008
-            goal_bias=0.8
-        )
-        
-        self.robot_dof = self.robot_model.njnt
+        # failing_joints += ['finger_joint1', 'finger_joint2']
+        self.collision_estimator = CollisionEstimator(self.scene_model, inflation_radius=0, failing_joints=failing_joints, robot_joints=failing_joints)
 
+        # self.rrt_planner = JointSpaceTRRTFailure(
+        #     scene_model=self.scene_model,
+        #     robot_model=self.robot_model,
+        #     ik_solver=self.ik_solver,
+        #     collision_threshold=0.0000005,  # 1cm threshold
+        #     seed=self.seed,
+        #     collision_estimator=self.collision_estimator,
+        #     planning_space=PlanningSpace.JOINT_SPACE,
+        #     step_size= 0.05, #0.008,
+        #     goal_bias=0.7
+        # )
+
+        # self.rrt_planner = JointSpaceTRRTOMPL(
+        #     scene_model=self.scene_model,
+        #     robot_model=self.robot_model,
+        #     ik_solver=self.ik_solver,
+        #     collision_threshold=0.0000005,
+        #     seed=self.seed,
+        #     collision_estimator=self.collision_estimator,
+        #     object_positions={
+        #         12: self.get_object_position("object1"),
+        #         13: self.get_object_position("object2"), 
+        #         14: self.get_object_position("object3")
+        #     },
+        #     step_size=0.05,
+        #     goal_bias=0.15,
+        #     failure_weight=0.3  # Start low and tune up
+        # )
+
+        # self.rrt_planner = JointSpaceTRRTOMPL(
+        #     scene_model=self.scene_model,
+        #     robot_model=self.robot_model,
+        #     ik_solver=self.ik_solver,
+        #     collision_threshold=0.0000005,
+        #     seed=self.seed,
+        #     collision_estimator=self.collision_estimator,
+        #     step_size=0.05,
+        #     object_positions={
+        #         12: self.get_object_position("object1"),
+        #         13: self.get_object_position("object2"), 
+        #         14: self.get_object_position("object3")
+        #     },
+        #     failure_weight=5.0,
+        #     init_temperature=50.0,
+        #     temp_change_factor=1.1
+        # )
+                
+        self.robot_dof = self.robot_model.njnt
         self.current_path = None
         self.current_viewer = None
         
         # Set initial pose
         self._set_home_position()
+
+        # self.rrt_planner = JointSpaceSTOMP(
+        #     scene_model=self.scene_model,
+        #     robot_model=self.robot_model,
+        #     ik_solver=self.ik_solver,
+        #     collision_threshold=0.0000005,
+        #     seed=self.seed,
+        #     collision_estimator=self.collision_estimator,
+        #     step_size=0.05,
+        #     object_positions={
+        #         12: self.get_object_position("object1"),
+        #         13: self.get_object_position("object2"), 
+        #         14: self.get_object_position("object3")
+        #     },
+        #     failure_weight=20.0,
+        #     init_temperature=10.0,
+        #     temp_change_factor=1.1
+        # )
+
+        self.rrt_planner = JointSpaceSTOMP(
+            scene_model=self.scene_model,
+            robot_model=self.robot_model,
+            ik_solver=self.ik_solver,
+            collision_threshold=0.0000005,
+            seed=self.seed,
+            collision_estimator=self.collision_estimator,
+            object_positions={
+                12: self.get_object_position("object1"),
+                13: self.get_object_position("object2"), 
+                14: self.get_object_position("object3")
+            }
+        )
+
+        # path = self.stomp_planner.plan(start_config, goal_config)
+        
         # # ENHANCED GRIPPER DETECTION INCLUDING TENDON-BASED
         # print("\n🔍 Enhanced gripper detection (including tendon-based)...")
         # if not self.quick_fix_gripper_indices():
@@ -144,8 +214,99 @@ class PandaPickAndPlace:
                 smooth_path.append(intermediate)
         
         return smooth_path
+    
+    def plan_to_config(self, target_config: np.ndarray, use_downward_constraint: bool = False) -> bool:
+        """Plan to end-effector pose using your IK + RRT."""
         
-    def plan_to_ee_pose(self, target_pos: np.ndarray, use_downward_constraint: bool = False) -> bool:
+        print(f"🎯 Planning to config Position: {target_config}")
+        # Create target with optional orientation constraint
+        # if use_downward_constraint:
+        #     print("   🔽 Using downward orientation constraint")
+        #     # Create downward orientation quaternion [w, x, y, z]
+        #     downward_rotation = R.from_euler('x', 180, degrees=True)
+        #     quat_scipy = downward_rotation.as_quat()  # scipy format [x,y,z,w]
+            
+        #     # Convert to [w,x,y,z] format for EndEffectorTarget
+        #     orientation_quat = np.array([quat_scipy[3], quat_scipy[0], quat_scipy[1], quat_scipy[2]])
+            
+        #     try:
+        #         target = EndEffectorTarget(
+        #             position=target_pos,
+        #             orientation=orientation_quat,
+        #             frame_name="end_effector",
+        #             frame_type="site"
+        #         )
+        #         print(f"   ✅ EndEffectorTarget created successfully")
+        #     except Exception as e:
+        #         print(f"   ❌ Error creating EndEffectorTarget: {e}")
+        #         # Try without orientation as fallback
+        #         print("   🔄 Falling back to position-only target")
+        #         target = EndEffectorTarget(
+        #             position=target_pos,
+        #             frame_name="end_effector",
+        #             frame_type="site"
+        #         )
+        # else:
+        #     # Use YOUR original target (position only)
+        #     target = EndEffectorTarget(
+        #         position=target_pos,
+        #         frame_name="end_effector",
+        #         frame_type="site"
+        #     )
+        
+        # Try multiple IK seeds (increased attempts for constrained cases)
+        # max_attempts = 20 if use_downward_constraint else 10
+        goal_configs = [target_config]
+        # In your plan_to_ee_pose, when finding IK solutions:
+        # for attempt in range(max_attempts):
+        #     if attempt == 0:
+        #         # First attempt: use current configuration as seed
+        #         seed = self.get_current_config()
+        #     else:
+        #         # Other attempts: random seeds
+        #         seed = self.ik_solver.get_random_valid_config(rng=np.random.RandomState(self.seed))
+                
+        #     if seed is None:
+        #         continue
+            
+        #     solution, result = self.ik_solver.solve(target, seed) 
+        #     if result == IKResult.SUCCESS:
+        #         if not self.collision_checker.check_collisions(solution):
+        #             goal_configs.append(solution)
+        #             print(f"   Found IK solution {len(goal_configs)}")
+        #             if len(goal_configs) >= 10:
+        #                 break
+        
+        # if not goal_configs:
+        #     print("❌ No valid IK solutions found")
+        #     # If constrained planning failed, try unconstrained as fallback
+        #     if use_downward_constraint:
+        #         print("🔄 Trying fallback without orientation constraint...")
+        #         return self.plan_to_ee_pose(target_pos, use_downward_constraint=False)
+        #     return False
+        
+        # Try RRT to each goal
+        start_config = self.get_current_config()
+        
+        for i, goal_config in enumerate(goal_configs):
+            print(f"   Trying RRT to solution {i+1}/{len(goal_configs)}")
+            
+            path = self.rrt_planner.plan(
+                start_config=start_config,
+                goal_config=goal_config,
+                frame_name="end_effector"
+            )
+            
+            if path:
+                self.current_path = path
+                print(f"✅ Planning successful!")
+                print(f"   Waypoints: {len(path)}")
+                return True
+        
+        print("❌ RRT failed to reach any IK solution")
+        return False
+        
+    def plan_to_ee_pose(self, target_pos: np.ndarray, task_type: str,use_downward_constraint: bool = False) -> bool:
         """Plan to end-effector pose using your IK + RRT."""
         
         print(f"🎯 Planning to EE Position: {target_pos}")
@@ -217,6 +378,8 @@ class PandaPickAndPlace:
         
         # Try RRT to each goal
         start_config = self.get_current_config()
+
+        print(f"Start config: {start_config} -- Trying {len(goal_configs)} goal configs")
         
         for i, goal_config in enumerate(goal_configs):
             print(f"   Trying RRT to solution {i+1}/{len(goal_configs)}")
@@ -224,9 +387,11 @@ class PandaPickAndPlace:
             path = self.rrt_planner.plan(
                 start_config=start_config,
                 goal_config=goal_config,
-                frame_name="end_effector"
+                frame_name="end_effector",
+                task_type = task_type
             )
-            
+            print(f"Path first waypoint: {path[0]} -- Path last waypoint: {path[-1]}")
+            print(f"Start config: {start_config} -- Goal config: {goal_config} \n\n")
             if path:
                 self.current_path = path
                 print(f"✅ Planning successful!")
@@ -238,6 +403,7 @@ class PandaPickAndPlace:
     
     def execute_path(self, speed: float = 0.5, use_physics: bool = True, isGrasping: bool = False):
         """Execute planned path with optional physics simulation."""
+
         if self.current_path is None:
             print("No path to execute")
             return
@@ -411,7 +577,7 @@ class PandaPickAndPlace:
         print("✋ Closing tendon gripper (gentle)...")
         
         initial_control = self.scene_data.ctrl[7]
-        max_step = 100
+        max_step = 15 #100
 
         for step in range(max_step):
             # Slower, more gentle closing
@@ -447,7 +613,7 @@ class PandaPickAndPlace:
             if step % 20 == 0 and self.current_viewer is not None:
                 self.current_viewer.sync()
             
-            time.sleep(0.003)  # Slower for gentle approach
+            time.sleep(0.05)  # Slower for gentle approach
         
         # Hold position
         final_control = self.scene_data.ctrl[7]
@@ -568,32 +734,33 @@ class PandaPickAndPlace:
         print("PHASE 2: APPROACH OBJECT")
         print("="*30)
         # input("Press Enter to move to approach position...")
-        if not self.plan_to_ee_pose(approach_pos, use_downward_constraint=True):
+        if not self.plan_to_ee_pose(approach_pos, use_downward_constraint=True, task_type = "transit"):
             print("❌ Failed to plan to approach position")
             return False
         
-        if self.current_path:
-            smooth_path = self.densify_path(self.current_path, max_joint_step=0.04)
-            self.current_path = smooth_path
-            print(f"✅ Path densified to {len(smooth_path)} waypoints")
+        # if self.current_path and len(self.current_path) < 15:
+        #     smooth_path = self.densify_path(self.current_path, max_joint_step=0.04)
+        #     print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
+        #     self.current_path = smooth_path
         
-        self.execute_path(speed=1.2, use_physics=True)
+        self.execute_path(speed=0.5, use_physics=True)
         
         # Phase 3: Move to grasp position
         print("\n" + "="*30)
         print("PHASE 3: POSITION FOR GRASPING")
         print("="*30)
         # input("Press Enter to move to grasp position...")
-        if not self.plan_to_ee_pose(grasp_pos, use_downward_constraint=True):
+        if not self.plan_to_ee_pose(grasp_pos, use_downward_constraint=True, task_type = "pick"):
             print("❌ Failed to plan to grasp position")
             return False
         
-        if self.current_path:
-            smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
-            self.current_path = smooth_path
+        # if self.current_path and len(self.current_path) < 15:
+        #     smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
+        #     print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
+        #     self.current_path = smooth_path
         
         self.open_gripper()
-        self.execute_path(speed=0.8, use_physics=True)  # Slower for precision
+        self.execute_path(speed=0.5, use_physics=True)  # Slower for precision
         
         # Phase 4: Physics-based grasping
         print("\n" + "="*30)
@@ -613,41 +780,18 @@ class PandaPickAndPlace:
         lift_pos = approach_pos.copy()
         lift_pos[2] += 0.05  # Extra height for safety
         
-        if not self.plan_to_ee_pose(lift_pos, use_downward_constraint=False):
+        if not self.plan_to_ee_pose(lift_pos, use_downward_constraint=False, task_type = "pick"):
             print("❌ Failed to plan lift motion")
             return False
         
         # Execute lift with physics (object should follow if grasped)
-        self.execute_path(speed=0.25, use_physics=True, isGrasping=True)
+        self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
         
         # Verify object is still grasped after lift
         current_obj_pos = self.get_object_position("object3")
         if current_obj_pos is not None:
             height_gained = current_obj_pos[2] - obj_pos[2]
             print(f"   Object height gained: {height_gained*100:.1f}cm")
-            
-            # if height_gained < 0.08:  # Less than 8cm lifted
-            #     print("⚠️ Object may have been dropped during lift!")
-                
-            #     # Quick re-grasp attempt
-            #     print("🔄 Attempting re-grasp...")
-            #     self.open_gripper()
-                
-            #     # Go back down to object level
-            #     current_obj_pos = self.get_object_position("object3")
-            #     if current_obj_pos is not None:
-            #         regrasp_pos = current_obj_pos.copy()
-            #         regrasp_pos[2] += grasp_height
-                    
-            #         if self.plan_to_ee_pose(regrasp_pos, use_downward_constraint=True):
-            #             self.execute_path(speed=0.6, use_physics=True)
-            #             if not self.improved_grasp_sequence_physics():
-            #                 print("❌ Re-grasp failed")
-            #                 return False
-                        
-            #             # Try lift again
-            #             if self.plan_to_ee_pose(lift_pos, use_downward_constraint=False):
-            #                 self.execute_path(speed=0.6, use_physics=True)
         
         # Phase 6: Transport to place location
         print("\n" + "="*30)
@@ -655,11 +799,11 @@ class PandaPickAndPlace:
         print("="*30)
         # input("Press Enter to move to place location...")
         
-        if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True):
+        if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True, task_type = "transit"):
             print("❌ Failed to plan transport motion")
             return False
         
-        self.execute_path(speed=0.25, use_physics=True, isGrasping=True)
+        self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
         
         # Phase 7: Lower to place position
         print("\n" + "="*30)
@@ -667,11 +811,11 @@ class PandaPickAndPlace:
         print("="*30)
         # input("Press Enter to lower object to place position...")
         
-        if not self.plan_to_ee_pose(place_pos, use_downward_constraint=True):
+        if not self.plan_to_ee_pose(place_pos, use_downward_constraint=True, task_type = "place"):
             print("❌ Failed to plan to place position")
             return False
         
-        self.execute_path(speed=0.25, use_physics=True, isGrasping=True)  # Slow and careful
+        self.execute_path(speed=0.5, use_physics=True, isGrasping=True)  # Slow and careful
         
         # Phase 8: Release with physics
         print("\n" + "="*30)
@@ -683,7 +827,7 @@ class PandaPickAndPlace:
         
         # Give time for object to settle
         print("   Allowing object to settle...")
-        for _ in range(200):  # 200 physics steps
+        for _ in range(100):  # 100 physics steps
             mujoco.mj_step(self.scene_model, self.scene_data)
             if self.current_viewer is not None:
                 self.current_viewer.sync()
@@ -711,11 +855,11 @@ class PandaPickAndPlace:
         retreat_pos = place_approach_pos.copy()
         retreat_pos[2] += 0.05  # Extra clearance
         
-        if not self.plan_to_ee_pose(retreat_pos, use_downward_constraint=False):
+        if not self.plan_to_ee_pose(retreat_pos, use_downward_constraint=False, task_type = "transit"):
             print("❌ Failed to plan retreat motion")
             return False
         
-        self.execute_path(speed=1.0, use_physics=True)
+        self.execute_path(speed=0.5, use_physics=True)
         
         # Phase 10: Return home
         print("\n" + "="*30)
@@ -724,10 +868,17 @@ class PandaPickAndPlace:
         # input("Press Enter to return to home position...")
         
         home_config = np.zeros(self.robot_dof)
-        self.current_path = [self.get_current_config(), home_config]
-        smooth_path = self.densify_path(self.current_path, max_joint_step=0.05)
-        self.current_path = smooth_path
-        self.execute_path(speed=1.0, use_physics=True)
+        # self.current_path = [self.get_current_config(), home_config]
+        # input("Press Enter to move to grasp position...")
+        if not self.plan_to_config(home_config, use_downward_constraint=False, task_type = "transit"):
+            print("❌ Failed to plan to grasp position")
+            return False
+        # smooth_path = self.densify_path(self.current_path, max_joint_step=0.05)
+        # smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
+        # print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
+        # self.current_path = smooth_path
+        
+        self.execute_path(speed=0.5, use_physics=True)
         
         print("\n" + "🎉"*20)
         print("PHYSICS-BASED PICK AND PLACE COMPLETED!")
@@ -840,22 +991,60 @@ class PandaPickAndPlace:
         print("\nTesting grasp position:")
         self.debug_ik_issue(grasp_pos)
 
+    def landscape_test(self):
+                # In your demo, before planning:
+        print("Verifying cost landscape...")
+        print("\nTest 1: Cost landscape grid")
+        self.rrt_planner.verify_cost_landscape_grid()
+
+        print("\nTest 2: Radial Cost Profile")
+        self.rrt_planner.verify_radial_cost_profile()
+
+        print("\nTest 3: Path Cost Comparison")
+        self.rrt_planner.verify_path_cost_comparison()
+        # self.rrt_planner.verify_cost_gradients()
+    
+    # def run_demo(self):
+    #     """Run the pick and place demo with MuJoCo viewer."""
+        
+    #     print("\n🎬 Starting Pick and Place Demo")
+    #     print("=" * 40)
+        
+    #     with mujoco.viewer.launch_passive(self.scene_model, self.scene_data) as viewer:
+    #         self.current_viewer = viewer
+            
+    #         print("\n📋 This demo will:")
+    #         print("1. Locate object3 in the scene")
+    #         print("2. Plan approach trajectory (🔽 downward constraint)")
+    #         print("3. Grasp the object (🔽 downward constraint)")
+    #         print("4. Move it to place approach (🔽 downward constraint)")
+    #         print("5. Place and release (🔽 downward constraint)")
+    #         print("6. Retreat and return home (unconstrained)")
+    #         print("\nEach step requires Enter to proceed...")
+            
+    #         input("\nPress Enter to start pick and place demo...")
+
+    #         self.test_position_reachability()
+            
+    #         # Run pick and place
+    #         success = self.pick_and_place_object3()
+            
+    #         if success:
+    #             print("\n✅ Pick and place demo completed successfully!")
+    #         else:
+    #             print("\n❌ Pick and place demo failed")
+            
+    #         self.current_viewer = None
+    #         input("\nPress Enter to exit...")
+
+
 def main():
     """Main function."""
     
     # Update these paths to your XML files
-    # automated adding of paths 
-    user =  os.getenv("USER")
-    if user == "aaron":
-        path = "/home/aaron/workspace/mujoco-arena"
-    elif user == "saghani":
-        path = "/Users/saghani/Workspace/Research/GenAISim"
-    else:
-        # To new user: your path here
-        path = ""
-
-    scene_xml_path = os.path.join(path, "franka_emika_panda/scene.xml")
-    robot_xml_path = os.path.join(path, "franka_emika_panda/panda.xml")
+    XML_PATH = "/home/aaron/workspace/mujoco-arena/"
+    scene_xml_path = XML_PATH + "franka_emika_panda/scene.xml"
+    robot_xml_path = XML_PATH + "franka_emika_panda/panda.xml"
     
     try:
         # Create pick and place demo
@@ -865,6 +1054,11 @@ def main():
         Baseline RRT good seed: 15, 29, 49
         '''
         
+        # demo.rrt_planner.set_aggressive_avoidance_parameters()
+
+        # Run tests
+        # demo.landscape_test()
+
         # Run the demo
         demo.run_demo_full_physics()
     
@@ -874,7 +1068,6 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         print("Make sure all your modules are in the correct paths")
-        print(traceback.format_exc())
 
 
 if __name__ == "__main__":

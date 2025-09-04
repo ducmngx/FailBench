@@ -65,8 +65,21 @@ class CollisionEstimator:
 
         unique_body_pairs, unique_idx = np.unique(sorted_collision_pairs_bids, return_index=True, axis=0)
 
-        prob_of_cand_collision_over_geoms_in_body = np.array([np.power(intersect_area.sum(axis=0), [1,-1]).prod() for intersect_area in  np.split(sorted_merged_cand_areas, unique_idx[1:])])
-        prob_of_robot_collision_over_geoms_in_body = np.array([np.power(intersect_area.sum(axis=0), [1,-1]).prod() for intersect_area in  np.split(sorted_merged_robot_areas, unique_idx[1:])])
+        # prob_of_cand_collision_over_geoms_in_body = np.array([np.power(intersect_area.sum(axis=0), [1,-1]).prod() for intersect_area in  np.split(sorted_merged_cand_areas, unique_idx[1:])])
+        # prob_of_robot_collision_over_geoms_in_body = np.array([np.power(intersect_area.sum(axis=0), [1,-1]).prod() for intersect_area in  np.split(sorted_merged_robot_areas, unique_idx[1:])])
+
+        eps = 1e-9 # avoid 1/0 errors (0^-1)
+
+        prob_of_robot_collision_over_geoms_in_body = np.array([
+            np.power(intersect_area.sum(axis=0) + eps, [1, -1]).prod()
+            for intersect_area in np.split(sorted_merged_robot_areas, unique_idx[1:])
+        ])
+
+        prob_of_cand_collision_over_geoms_in_body = np.array([
+            np.power(intersect_area.sum(axis=0) + eps, [1, -1]).prod()
+            for intersect_area in np.split(sorted_merged_cand_areas, unique_idx[1:])
+        ])
+
         prob_of_collision_between_bodies = np.max((prob_of_cand_collision_over_geoms_in_body, prob_of_robot_collision_over_geoms_in_body), 0)
         
         gradients_of_bodies_wrt_dof = np.array([grads.sum(axis=0) for grads in  np.split(sorted_gradients_of_geoms_wrt_dof, unique_idx[1:])])
@@ -74,7 +87,7 @@ class CollisionEstimator:
         gradients_of_bodies_wrt_joints = self.dof_to_jnt(gradients_of_bodies_wrt_dof, axis=1, aggregate_type="sum")
 
         return unique_body_pairs, prob_of_collision_between_bodies, gradients_of_bodies_wrt_joints
-
+    
     def forward_kinematics(self, config):
         """
         Very similar to planner.collision.collision_checker.set_robot_configuration_direct, 
@@ -221,8 +234,8 @@ class CollisionEstimator:
         geom_maxs_of_mins = log_sum_exp_beta(np.array([robot_geom_soft_mins, cand_geom_mins]), axis=0, max=True)
 
         # calculate overlap in x and y axis
-        x_overlap = np.clip(geom_mins_of_maxs[:, 0] - geom_maxs_of_mins[:, 0], min=0)
-        y_overlap = np.clip(geom_mins_of_maxs[:, 1] - geom_maxs_of_mins[:, 1], min=0)
+        x_overlap = np.clip(geom_mins_of_maxs[:, 0] - geom_maxs_of_mins[:, 0], a_min=0, a_max=None)
+        y_overlap = np.clip(geom_mins_of_maxs[:, 1] - geom_maxs_of_mins[:, 1], a_min=0, a_max=None)
 
         # overlap = intersection
         intersection = x_overlap*y_overlap          # shape = (N,)
