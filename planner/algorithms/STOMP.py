@@ -55,8 +55,8 @@ class JointSpaceSTOMP():
         
         # Object information for cost calculation
         self.object_positions = object_positions
-        self.target_bids = [12, 14]
-        self.avoid_bids = [13]
+        self.target_bids = [12, 13]             
+        self.avoid_bids = [bid for bid in object_positions.keys() if bid not in self.target_bids]       # avoid_bids = object_bids \ target_bids
 
         # Table avoidance parameters (similar to your object avoidance)
         self.max_table_cost = 25.0  # Maximum cost for being over table
@@ -68,7 +68,7 @@ class JointSpaceSTOMP():
         self.llm_severity_map = {
             12: 10,   # Target objects
             13: 50,   # Avoid object - very high severity
-            14: 10,   # Target objects
+            13: 10,   # Target objects
              0:  8    # Default for table 
         }
         self.max_failure_prob = 0.98
