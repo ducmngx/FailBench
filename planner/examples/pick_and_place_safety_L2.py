@@ -1071,7 +1071,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             planning_space=PlanningSpace.JOINT_SPACE,
             step_size=0.008,
             goal_bias=0.8,
-            seed=15
+            seed=self.seed
         )
 
         # self.rrt_planner = JointSpaceTRRTFailure(
