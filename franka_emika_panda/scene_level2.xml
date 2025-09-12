@@ -36,170 +36,107 @@
       markrgb="0.8 0.8 0.8" width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
 
-    <!-- HIGH FRICTION MATERIALS FOR GRASPING -->
-    <!-- <material name="high_friction" rgba="0.0 0.35 0.0 1" friction="2.0 0.5 0.1"/>
-    <material name="gripper_friction" rgba="0.3 0.3 0.3 1" friction="2.5 0.5 0.1"/> -->
   </asset>
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
 
-    <!-- mocap targets (unchanged) -->
-    <!-- <body name="target_left"  pos="0.1 0 0.5" quat="0 0 0 1" mocap="true">
-      <geom type="box" size="0.05 0.05 0.05" contype="0" conaffinity="0"
-            rgba="0.6 0.3 0.3 0.0"/>
-    </body>
-    <body name="target_right" pos="0.1 0 0.5" quat="0 0 0 1" mocap="true">
-      <geom type="box" size="0.05 0.05 0.05" contype="0" conaffinity="0"
-            rgba="0.6 0.3 0.3 0.0"/>
-    </body> -->
-
-
-    <!-- Add some object to it -->
-
-    <!-- <body name="object1" pos="-0.1 -0.4 0.425" quat="0 0 0 1">
-      <joint name="object1_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="0.35 0.35 0.0 1"/>
-    </body>
-
-    <body name="object2" pos="0.0 -0.4 0.425" quat="0 0 0 1">
-      <joint name="object2_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body>
-
-    <body name="object3" pos="0.1 -0.4 0.425" quat="0 0 0 1">
-      <joint name="object3_joint" type="free"/>
-      <geom name="object3_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.35 0.0 1" solimp="0.015 1 0.02" solref="0.005 1" condim="6" friction="2.8 1.2 0.1"/>
-    </body>
-
-    <body name="object4" pos="-0.1 -0.5 0.425" quat="0 0 0 1">
-      <joint name="object4_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body>
-
-    <body name="object5" pos="0.0 -0.5 0.425" quat="0 0 0 1">
-      <joint name="object5_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body>
-
-    <body name="object6" pos="0.1 -0.5 0.425" quat="0 0 0 1">
-      <joint name="object6_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body>
-
-    <body name="object7" pos="-0.1 -0.6 0.425" quat="0 0 0 1">
-      <joint name="object7_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body>
-
-    <body name="object8" pos="0.0 -0.6 0.425" quat="0 0 0 1">
-      <joint name="object8_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body>
-
-    <body name="object9" pos="0.1 -0.6 0.425" quat="0 0 0 1">
-      <joint name="object9_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-    </body> -->
 
     <!-- First Row -->
-      
-      <body name="obstacle1" pos="-0.2 -0.2 0.425" quat="0 0 0 1">
+      <body name="obstacle1" pos="-0.2 -0.25 0.43" quat="0 0 0 1">
         <joint name="obstacle1_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle2" pos="-0.1 -0.2 0.425" quat="0 0 0 1">
+      <body name="obstacle2" pos="-0.1 -0.25 0.43" quat="0 0 0 1">
         <joint name="obstacle2_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle3" pos="0.0 -0.2 0.425" quat="0 0 0 1">
+      <body name="obstacle3" pos="0.0 -0.25 0.43" quat="0 0 0 1">
         <joint name="obstacle3_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle4" pos="0.1 -0.2 0.425" quat="0 0 0 1">
+      <body name="obstacle4" pos="0.1 -0.25 0.43" quat="0 0 0 1">
         <joint name="obstacle4_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="object3" pos="0.2 -0.2 0.425" quat="0 0 0 1">
+      <body name="object3" pos="0.2 -0.25 0.43" quat="0 0 0 1">
         <joint name="object3_joint" type="free"/>
         <geom name="object3_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.35 0.0 1" solimp="0.015 1 0.02" solref="0.005 1" condim="6" friction="2.8 1.2 0.1"/>
       </body>
 
     <!-- Second Row -->
-      <body name="obstacle5" pos="-0.2 -0.3 0.425" quat="0 0 0 1">
+      <body name="obstacle5" pos="-0.2 -0.35 0.43" quat="0 0 0 1">
         <joint name="obstacle5_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle6" pos="-0.1 -0.3 0.425" quat="0 0 0 1">
+      <body name="obstacle6" pos="-0.1 -0.35 0.43" quat="0 0 0 1">
         <joint name="obstacle6_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle7" pos="0.0 -0.3 0.425" quat="0 0 0 1">
+      <body name="obstacle7" pos="0.0 -0.35 0.43" quat="0 0 0 1">
         <joint name="obstacle7_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle8" pos="0.1 -0.3 0.425" quat="0 0 0 1">
+      <body name="obstacle8" pos="0.1 -0.35 0.43" quat="0 0 0 1">
         <joint name="obstacle8_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle9" pos="0.2 -0.3 0.425" quat="0 0 0 1">
+      <body name="obstacle9" pos="0.2 -0.35 0.43" quat="0 0 0 1">
         <joint name="obstacle9_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
     <!-- Third Row -->
-      <body name="object1" pos="-0.2 -0.4 0.425" quat="0 0 0 1">
+      <body name="object1" pos="-0.2 -0.45 0.43" quat="0 0 0 1">
         <joint name="object1_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.0 0.0 0.35 1"/>
       </body>
 
-      <body name="obstacle10" pos="-0.1 -0.4 0.425" quat="0 0 0 1">
+      <body name="obstacle10" pos="-0.1 -0.45 0.43" quat="0 0 0 1">
         <joint name="obstacle10_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle11" pos="0.0 -0.4 0.425" quat="0 0 0 1">
+      <body name="obstacle11" pos="0.0 -0.45 0.43" quat="0 0 0 1">
         <joint name="obstacle11_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle12" pos="0.1 -0.4 0.425" quat="0 0 0 1">
+      <body name="obstacle12" pos="0.1 -0.45 0.43" quat="0 0 0 1">
         <joint name="obstacle12_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle13" pos="0.2 -0.4 0.425" quat="0 0 0 1">
+      <body name="obstacle13" pos="0.2 -0.45 0.43" quat="0 0 0 1">
         <joint name="obstacle13_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
     <!-- simple table, now really on the ground -->
-    <body name="simple_table" pos="0 -0.3 0" quat="0 0 0 1">
+    <body name="simple_table" pos="0 -0.35 0" quat="0 0 0 1">
       <joint name="table_joint" type="free"/>
 
       <!-- tabletop -->
-      <!-- <geom type="box" size="0.20 0.13 0.01" pos="0 0 0.25"
-            rgba="0.35 0.35 0.35 1"/> -->
       <geom type="box" size="0.30 0.16 0.02" pos="0 0 0.38"
             rgba="0.35 0.35 0.35 1"/>
 
       <!-- legs -->
-      <geom type="box" size="0.015 0.015 0.15" pos=" 0.28  0.14 0.23"
+      <geom type="box" size="0.015 0.015 0.18" pos=" 0.28  0.14 0.18"
             rgba="0.3 0.3 0.3 1"/>
-      <geom type="box" size="0.015 0.015 0.15" pos="-0.28  0.14 0.23"
+      <geom type="box" size="0.015 0.015 0.18" pos="-0.28  0.14 0.18"
             rgba="0.3 0.3 0.3 1"/>
-      <geom type="box" size="0.015 0.015 0.15" pos=" 0.28 -0.14 0.23"
+      <geom type="box" size="0.015 0.015 0.18" pos=" 0.28 -0.14 0.18"
             rgba="0.3 0.3 0.3 1"/>
-      <geom type="box" size="0.015 0.015 0.15" pos="-0.28 -0.14 0.23"
+      <geom type="box" size="0.015 0.015 0.18" pos="-0.28 -0.14 0.18"
             rgba="0.3 0.3 0.3 1"/> 
 
       <!-- picking sites (mid-thickness)

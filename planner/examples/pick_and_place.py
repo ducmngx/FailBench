@@ -41,14 +41,15 @@ class PandaPickAndPlace:
         # Initialize your planning modules
         self.ik_solver = IKSolver(self.robot_model)
         self.collision_checker = CollisionChecker(self.scene_model, self.robot_model)
-        self.rrt_planner = JointSpaceRRTConnectFailure(
+        self.rrt_planner = JointSpaceRRTConnect(
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
             collision_threshold=0.0000005,  # 1cm threshold
             planning_space=PlanningSpace.JOINT_SPACE,
             step_size=0.008,
-            goal_bias=0.8
+            goal_bias=0.8,
+            seed = 42
         )
         
         self.robot_dof = self.robot_model.njnt

@@ -123,19 +123,19 @@ class PandaPickAndPlace:
         #     temp_change_factor=1.1
         # )
 
-        self.rrt_planner = JointSpaceSTOMP(
-            scene_model=self.scene_model,
-            robot_model=self.robot_model,
-            ik_solver=self.ik_solver,
-            collision_threshold=0.0000005,
-            seed=self.seed,
-            collision_estimator=self.collision_estimator,
-            object_positions={
-                12: self.get_object_position("object1"),
-                13: self.get_object_position("object2"), 
-                14: self.get_object_position("object3")
-            }
-        )
+        # self.rrt_planner = JointSpaceSTOMP(
+        #     scene_model=self.scene_model,
+        #     robot_model=self.robot_model,
+        #     ik_solver=self.ik_solver,
+        #     collision_threshold=0.0000005,
+        #     seed=self.seed,
+        #     collision_estimator=self.collision_estimator,
+        #     object_positions={
+        #         12: self.get_object_position("object1"),
+        #         13: self.get_object_position("object2"), 
+        #         14: self.get_object_position("object3")
+        #     }
+        # )
 
         # path = self.stomp_planner.plan(start_config, goal_config)
         
@@ -1042,7 +1042,7 @@ def main():
     """Main function."""
     
     # Update these paths to your XML files
-    XML_PATH = "/home/aaron/workspace/mujoco-arena/"
+    XML_PATH = "/Users/saghani/Workspace/Research/GenAISim/"
     scene_xml_path = XML_PATH + "franka_emika_panda/scene.xml"
     robot_xml_path = XML_PATH + "franka_emika_panda/panda.xml"
     
