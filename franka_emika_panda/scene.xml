@@ -44,12 +44,12 @@
 
     <body name="object1" pos="-0.1 -0.4 0.425" quat="0 0 0 1">
       <joint name="object1_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="0.35 0.35 0.0 1"/>
+      <geom type="box" size="0.03 0.03 0.03" rgba="0.0 0.0 0.35 1"/>
     </body>
 
-    <body name="object2" pos="0.0 -0.4 0.425" quat="0 0 0 1">
-      <joint name="object2_joint" type="free"/>
-      <geom type="box" size="0.03 0.03 0.03" rgba="0.35 0.0 0.0 1"/>
+    <body name="obstacle_hard1" pos="0.0 -0.4 0.425" quat="0 0 0 1">
+      <joint name="obstacle_hard1_joint" type="free"/>
+      <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
     </body>
 
     <body name="object3" pos="0.1 -0.4 0.425" quat="0 0 0 1">

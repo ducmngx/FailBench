@@ -1,8 +1,10 @@
+from typing import List
+
 class ExperimentTrajectoryManager:
     def __init__(self):
         self.trajectories = {} # Store trajectories keyed by scenario name
     
-    def store_trajectory(self, scenario_name, phase, trajectory, start_config=None, goal_config=None, goal_pos=None):
+    def store_trajectory(self, scenario_name, phase, trajectory, start_config=None, goal_config=None, goal_pos=None, me_cost=None, safety_cost=None):
         """Plan with and without failure costs, store both."""
         print(f"Storing trajectory for {scenario_name} at phase '{phase}'")
 
@@ -15,7 +17,9 @@ class ExperimentTrajectoryManager:
             'trajectory': trajectory,
             # 'start_config': start_config.copy(),
             # 'goal_config': goal_config.copy(),
-            'goal_pos': goal_pos
+            'goal_pos': goal_pos,
+            "me_cost": me_cost,
+            "safety_cost": safety_cost
         }
         
         print(f"Stored trajectory for {scenario_name} at  phase '{phase}'")
@@ -47,14 +51,20 @@ class ExperimentTrajectoryManager:
             print(f"\nScenario: {scenario_name}")
             for phase_name, data in phases.items():
 
-                
                 # Check if trajectories exist and get their lengths
                 plan = data['trajectory'] if data['trajectory'] else []
-                
+                if len(plan) == 0:
+                    print(f"No traj saved in {scenario_name}/{phase_name}...")
+                    continue
                 print(f"  Phase: {phase_name}")
-                print(f"    Scenario: {scenario_name}")
-                print(f"    Trajectory: {plan}.")
-                print(f"Data type: {type(plan[0])}")
+                print(f"    Length of traj: {len(plan)}.")
+                for k, val in data.items():
+                    print(f"    {k} ({type(val)}): {val}.")
+                # # print(f"    Scenario: {scenario_name}")
+                # print(f"    Trajectory: {plan}.")
+                # print(f"    Data type: {type(plan[0])}")
+                # print(f"    Trajectory: {plan}.")
+                # print(f"    Data type: {type(plan[0])}")
     
     def save_to_file(self, filename="experiment_trajectories.pkl"):
         """Save all trajectories to file."""
@@ -69,6 +79,16 @@ class ExperimentTrajectoryManager:
         with open(filename, 'rb') as f:
             self.trajectories = pickle.load(f)
         print(f"Loaded trajectories from {filename}")
+
+    def update_from_file(self, filenames:str):
+        """Load trajectories from file and adds to the dictionary of trajectories."""
+        import pickle
+        with open(filenames, 'rb') as f:
+            trajectories = pickle.load(f)
+        self.trajectories.update(trajectories)
+        print(f"Loaded trajectories from {filenames}")
+
+
 
 # # Usage example:
 # trajectory_manager = ExperimentTrajectoryManager()

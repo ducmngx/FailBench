@@ -1,0 +1,198 @@
+<mujoco model="panda scene">
+
+  <!-- <option cone="elliptic" impratio="100"/> -->
+
+  <size nconmax="500" njmax="2000"/>
+  <include file="panda.xml"/>
+  <!-- <option timestep="1e-3"/> -->
+
+  <option timestep="1e-3" 
+    cone="elliptic" 
+    impratio="5"
+    tolerance="1e-6"
+    iterations="30"
+    ls_iterations="10"
+    noslip_tolerance="1e-6">
+  </option>
+
+  <statistic center="0.3 0 0.4" extent="1"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+  <!-- <option timestep="0.0001">
+    <flag eulerdamp="disable" contact="enable" gravity="enable"/>
+  </option> -->
+
+  <option noslip_iterations="3">
+    <flag multiccd="enable"  gravity="enable"/>
+  </option>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+
+    <!-- HIGH FRICTION MATERIALS FOR GRASPING -->
+    <!-- <material name="high_friction" rgba="0.0 0.35 0.0 1" friction="2.0 0.5 0.1"/>
+    <material name="gripper_friction" rgba="0.3 0.3 0.3 1" friction="2.5 0.5 0.1"/> -->
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
+
+    <!-- mocap targets (unchanged) -->
+    <!-- <body name="target_left"  pos="0.1 0 0.5" quat="0 0 0 1" mocap="true">
+      <geom type="box" size="0.05 0.05 0.05" contype="0" conaffinity="0"
+            rgba="0.6 0.3 0.3 0.0"/>
+    </body>
+    <body name="target_right" pos="0.1 0 0.5" quat="0 0 0 1" mocap="true">
+      <geom type="box" size="0.05 0.05 0.05" contype="0" conaffinity="0"
+            rgba="0.6 0.3 0.3 0.0"/>
+    </body> -->
+
+
+    <!-- Add some object to it -->
+
+  <!-- Lower objects -->
+    <body name="object1" pos="-0.15 -0.4 0.305" quat="0 0 0 1">
+      <joint name="object1_joint" type="free"/>
+      <geom name="object1_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.0 0.35 1"/>
+    </body>
+
+    <body name="obstacle_hard1" pos="0.0 -0.4 0.38" quat="0 0 0 1">
+      <joint name="obstacle_hard1_joint" type="free"/>
+      <geom name="obstacle_hard1_geom" type="box" size="0.03 0.03 0.12" rgba="0.35 0.0 0.0 1"/>
+    </body>
+
+    <body name="obstacle_hard2" pos="-0.07 -0.33 0.305" quat="0 0 0 1">
+      <joint name="obstacle_hard2_joint" type="free"/>
+      <geom name="obstacle_hard2_geom" type="box" size="0.03 0.03 0.03" rgba="0.35 0.0 0.0 1"/>
+    </body>
+
+    <body name="obstacle_hard3" pos="0.07 -0.33 0.305" quat="0 0 0 1">
+      <joint name="obstacle_hard3_joint" type="free"/>
+      <geom name="obstacle_hard3_geom" type="box" size="0.03 0.03 0.03" rgba="0.35 0.0 0.0 1"/>
+    </body>
+
+    <body name="obstacle_soft1" pos="-0.07 -0.47 0.305" quat="0 0 0 1">
+      <joint name="obstacle_soft1_joint" type="free"/>
+      <geom name="obstacle_soft1_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
+    </body>
+
+    <body name="obstacle_soft2" pos="0.07 -0.47 0.305" quat="0 0 0 1">
+      <joint name="obstacle_soft2_joint" type="free"/>
+      <geom name="obstacle_soft2_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
+    </body>
+
+    <body name="object3" pos="0.16 -0.4 0.305" quat="0 0 0 1">
+      <joint name="object3_joint" type="free"/>
+      <geom name="object3_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.35 0.0 1" solimp="0.015 1 0.02" solref="0.005 1" condim="6" friction="2.8 1.2 0.1"/>
+    </body>
+
+    <!-- simple table, now really on the ground -->
+    <body name="simple_table" pos="0 -0.4 0" quat="0 0 0 1">
+      <joint name="table_joint" type="free"/>
+
+      <!-- tabletop -->
+      <!-- <geom type="box" size="0.20 0.13 0.01" pos="0 0 0.25"
+            rgba="0.35 0.35 0.35 1"/> -->
+      <geom type="box" size="0.20 0.13 0.02" pos="0 0 0.25"
+            rgba="0.35 0.35 0.35 1"/>
+
+      <!-- legs -->
+      <geom type="box" size="0.015 0.015 0.125" pos=" 0.18  0.11 0.125"
+            rgba="0.3 0.3 0.3 1"/>
+      <geom type="box" size="0.015 0.015 0.125" pos="-0.18  0.11 0.125"
+            rgba="0.3 0.3 0.3 1"/>
+      <geom type="box" size="0.015 0.015 0.125" pos=" 0.18 -0.11 0.125"
+            rgba="0.3 0.3 0.3 1"/>
+      <geom type="box" size="0.015 0.015 0.125" pos="-0.18 -0.11 0.125"
+            rgba="0.3 0.3 0.3 1"/>
+            
+    </body>
+
+  </worldbody>
+</mujoco>
+
+
+
+<!-- Checking geom 82: object1_geom in body object1 with current list of rname set()
+Checking geom 83: object2_geom in body object2 with current list of rname set()
+Checking geom 84: object3_geom in body object3 with current list of rname set()
+ -->
+
+ <!-- 
+ 
+ ======================================================================
+SIMPLE XML SEPARATION REPORT
+======================================================================
+
+FILES:
+  Scene XML: output.xml
+  Robot XML: panda.xml
+
+SEPARATION RESULTS:
+  Robot bodies: 12
+  Robot geoms (all): 82
+  Robot collision geoms: 24
+  Robot joints: 9
+  Environment bodies: 4
+  Environment geoms (all): 8
+  Environment collision geoms: 8
+  Environment joints: 4
+
+ROBOT COLLISION GEOMS:
+   1. Geom   0: floor                in world
+   2. Geom  12: unnamed              in link0
+   3. Geom  14: unnamed              in link1
+   4. Geom  16: unnamed              in link2
+   5. Geom  21: unnamed              in link3
+   6. Geom  26: unnamed              in link4
+   7. Geom  30: unnamed              in link5
+   8. Geom  31: unnamed              in link5
+   9. Geom  32: unnamed              in link5
+  10. Geom  50: unnamed              in link6
+  11. Geom  59: unnamed              in link7
+  12. Geom  65: unnamed              in hand
+  13. Geom  68: unnamed              in left_finger
+  14. Geom  69: unnamed              in left_finger
+  15. Geom  70: unnamed              in left_finger
+  16. Geom  71: unnamed              in left_finger
+  17. Geom  72: unnamed              in left_finger
+  18. Geom  73: unnamed              in left_finger
+  19. Geom  76: unnamed              in right_finger
+  20. Geom  77: unnamed              in right_finger
+  21. Geom  78: unnamed              in right_finger
+  22. Geom  79: unnamed              in right_finger
+  23. Geom  80: unnamed              in right_finger
+  24. Geom  81: unnamed              in right_finger
+
+ENVIRONMENT COLLISION GEOMS:
+   1. Geom  82: object1_geom         in object1
+   2. Geom  83: object2_geom         in object2
+   3. Geom  84: object3_geom         in object3
+   4. Geom  85: unnamed              in simple_table
+   5. Geom  86: unnamed              in simple_table
+   6. Geom  87: unnamed              in simple_table
+   7. Geom  88: unnamed              in simple_table
+   8. Geom  89: unnamed              in simple_table
+
+ROBOT JOINTS:
+   1. Joint  0: joint1               qpos[0]
+   2. Joint  1: joint2               qpos[1]
+   3. Joint  2: joint3               qpos[2]
+   4. Joint  3: joint4               qpos[3]
+   5. Joint  4: joint5               qpos[4]
+   6. Joint  5: joint6               qpos[5]
+   7. Joint  6: joint7               qpos[6]
+   8. Joint  7: finger_joint1        qpos[7]
+   9. Joint  8: finger_joint2        qpos[8]
+Collision pairs: [([0, 12, 14, 16, 21, 26, 30, 31, 32, 50, 59, 65, 68, 69, 70, 71, 72, 73, 76, 77, 78, 79, 80, 81], [82, 83, 84, 85, 86, 87, 88, 89])]
+
+ 
+  -->

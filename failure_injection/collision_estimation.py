@@ -19,8 +19,8 @@ class CollisionEstimator:
         # self.all_colliding_pairs = self._get_colliding_geom_pairs(self.robot_joint_geoms, self.non_robot_geoms)
         self.all_joint_ids = self._convert_to_joint_ids(failing_joints)
         assert method_type == "AABB"
+        self.AABB_vars_init = False
         # self._init_AABB_variables()
-
 
     def estimate_bodies_in_collision(self, failing_joints="all", failure_type="aggressive", calculate_grads=False):
         """
@@ -103,7 +103,9 @@ class CollisionEstimator:
         mujoco.mj_forward(self.model, self.data)
 
     def post_mj_forward_init(self):
-        self._init_AABB_variables()
+        if not self.AABB_vars_init:
+            self._init_AABB_variables()
+            self.AABB_vars_init = True
 
     def dof_to_jnt(self, dof_mat: np.ndarray, axis: int, aggregate_type: str = "sum"):
         assert aggregate_type in ["sum", "none"], "no other aggregation exists for method."

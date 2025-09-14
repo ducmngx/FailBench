@@ -22,6 +22,9 @@ from planner.algorithms.abstract_planner import PlanningSpace
 from failure_injection.collision_estimation import CollisionEstimator
 from planner.utils.traj_saver import ExperimentTrajectoryManager
 
+import argparse
+import os
+
 class PandaPickAndPlace:
     """
     Pick and place demo using your existing planning modules.
@@ -1048,6 +1051,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         
         # Load models
         print("🔍 Loading MuJoCo models...")
+        self.scene_name = os.path.splitext(os.path.basename(scene_xml_path))[0]
         self.scene_model = mujoco.MjModel.from_xml_path(scene_xml_path)
         self.robot_model = mujoco.MjModel.from_xml_path(robot_xml_path)
         self.scene_data = mujoco.MjData(self.scene_model)
@@ -1060,8 +1064,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         # Initialize your planning modules
         self.ik_solver = IKSolver(self.robot_model)
         self.collision_checker = CollisionChecker(self.scene_model, self.robot_model)
-        failing_joints = [f"joint{i}" for i in range(1,8)]
-        # failing_joints += ['finger_joint1', 'finger_joint2']
+        failing_joints = ['finger_joint1', 'finger_joint2']
         self.collision_estimator = CollisionEstimator(self.scene_model, inflation_radius=0, failing_joints=failing_joints, robot_joints=failing_joints)
 
         self.exp_traj_manager = ExperimentTrajectoryManager()
@@ -1074,17 +1077,30 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         # Set initial pose
         self._set_home_position()
 
-        self.rrt_planner = JointSpaceRRTConnect(
+        self.severity_table = self.generate_severity_table()
+
+        self.rrt_planner = JointSpaceRRTConnectFailure(
+            collision_estimator=self.collision_estimator,
+            body_severity_table=self.severity_table,
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
-            collision_threshold=0.0000005,  # 1cm threshold
+            collision_threshold=0.0000005, 
             planning_space=PlanningSpace.JOINT_SPACE,
-            step_size=0.008,
-            goal_bias=0.8,
-            seed=self.seed
-        )
-
+            step_size=0.005,
+            goal_bias=0.7,
+            seed=self.seed)
+        
+        # self.rrt_planner = JointSpaceRRTConnect(
+        #     scene_model=self.scene_model,
+        #     robot_model=self.robot_model,
+        #     ik_solver=self.ik_solver,
+        #     collision_threshold=0.01,  # 1cm threshold
+        #     planning_space=PlanningSpace.JOINT_SPACE,
+        #     step_size=0.005,
+        #     goal_bias=0.7,
+        #     seed=self.seed
+        # )
 
     def generate_multiple_trajectories(self):
         """Run the full physics pick and place demo."""
@@ -1113,7 +1129,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         obj1_pos[1] -= y_padding
 
         # waypoint is somewhere in between 
-        rng = np.random.RandomState(self.seed+5)
+        rng = np.random.RandomState(self.seed)
 
         num_samples = 10
         waypoint_pos = rng.random(size=(num_samples, 3)) * (obj_pos - obj1_pos) + obj1_pos
@@ -1129,17 +1145,17 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             print("5. Use physics-based position control throughout")
             print("\nEach phase requires Enter to proceed...")
             
-            input("\nPress Enter to start full physics demo...")
-            
+            # input("\nPress Enter to start full physics demo...")
+            time.sleep(3)
+
             for i in range(num_samples):
                 # Run full physics pick and place
                 try:
                     self.reset_object3("object3")
                     self._set_home_position()
-                    success = self.pick_and_place_generate_traj(waypoint_pos[i], i+3)
+                    success = self.pick_and_place_generate_traj(waypoint_pos[i], i)
                 except Exception as e:
                     continue
-                break
 
             if success:
                 print("\n✅ Full physics pick and place demo completed successfully!")
@@ -1147,9 +1163,9 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
                 print("\n❌ Full physics pick and place demo failed")
             
             self.current_viewer = None
-            input("\nPress Enter to exit...")
+            time.sleep(5)
+            # input("\nPress Enter to exit...")
  
-
     def pick_and_place_generate_traj(self, waypoint_pos, sample_i) -> bool:
         """Complete pick and place demo using physics simulation throughout."""
         
@@ -1204,11 +1220,6 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             print("❌ Failed to plan to approach position")
             return False
         
-        # if self.current_path and len(self.current_path) < 15:
-        #     smooth_path = self.densify_path(self.current_path, max_joint_step=0.04)
-        #     print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
-        #     self.current_path = smooth_path
-        
         self.execute_path(speed=0.5, use_physics=False)
         
         # Phase 3: Move to grasp position
@@ -1219,11 +1230,6 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         if not self.plan_to_ee_pose(grasp_pos, use_downward_constraint=True, task_type = "pick"):
             print("❌ Failed to plan to grasp position")
             return False
-        
-        # if self.current_path and len(self.current_path) < 15:
-        #     smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
-        #     print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
-        #     self.current_path = smooth_path
         
         self.open_gripper()
         self.execute_path(speed=0.5, use_physics=True)  # Slower for precision
@@ -1260,24 +1266,20 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             print(f"   Object height gained: {height_gained*100:.1f}cm")
         
         # Phase 6: Transport to place location
-        # print("\n" + "="*30)
-        # print("PHASE 6: TRANSPORT TO WAYPOINT")
-        # print("="*30)
-        # # input("Press Enter to move to place location...")
+        print("\n" + "="*30)
+        print("PHASE 6: TRANSPORT TO WAYPOINT")
+        print("="*30)
+        # input("Press Enter to move to place location...")
         
-        # if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
-        #     print("❌ Failed to plan transport motion")
-        #     return False
+        if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
+            print("❌ Failed to plan transport motion")
+            return False
         
-        # if self.current_path and len(self.current_path) < 15:
-        #     smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
-        #     print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
-        #     self.current_path = smooth_path
-
-        # print("saving trajectory")
-        # self.exp_traj_manager.store_trajectory("L2_RRTConnect", "phase6", self.current_path, goal_pos=waypoint_pos)
+        print("storing trajectory")
+        me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
+        self.exp_traj_manager.store_trajectory(self.scene_name, "phase6", self.current_path, goal_pos=waypoint_pos, me_cost=me_cost, safety_cost=safety_cost)
         
-        # self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
+        self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
 
         # Phase 6: Transport to place location
         print("\n" + "="*30)
@@ -1289,15 +1291,11 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True, task_type = "transit"):
             print("❌ Failed to plan transport motion")
             return False
-        
-        if self.current_path and len(self.current_path) < 15:
-            smooth_path = self.densify_path(self.current_path, max_joint_step=0.03)
-            print(f"✅ Path densified from {self.current_path} to {len(smooth_path)} waypoints")
-            self.current_path = smooth_path
 
-        print("saving trajectory")
-        self.exp_traj_manager.store_trajectory("L2_RRTConnect", "phase7", self.current_path, goal_pos=place_approach_pos)
-        self.exp_traj_manager.save_to_file("RRTConnect_baseline.pkl")
+        print("storing trajectory")
+        me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
+        self.exp_traj_manager.store_trajectory(self.scene_name, "phase7", self.current_path, goal_pos=place_approach_pos, me_cost=me_cost, safety_cost=safety_cost)
+        self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_sample_"+str(sample_i)+".pkl")
 
         self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
         
@@ -1311,7 +1309,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             print("❌ Failed to plan to place position")
             return False
         
-        self.execute_path(speed=0.5, use_physics=False, isGrasping=True)  # Slow and careful
+        self.execute_path(speed=0.5, use_physics=True, isGrasping=True)  # Slow and careful
         
         # Phase 8: Release with physics
         print("\n" + "="*30)
@@ -1343,13 +1341,13 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
                 print("   ⚠️ Placement could be better")
         
         # Phase 9: Retreat
-        print("\n" + "="*30)
-        print("PHASE 10: RETREAT")
-        print("="*30)
-        # input("Press Enter to retreat from object...")
+        # print("\n" + "="*30)
+        # print("PHASE 10: RETREAT")
+        # print("="*30)
+        # # input("Press Enter to retreat from object...")
         
-        retreat_pos = place_approach_pos.copy()
-        retreat_pos[2] += 0.05  # Extra clearance
+        # retreat_pos = place_approach_pos.copy()
+        # retreat_pos[2] += 0.05  # Extra clearance
         
         # if not self.plan_to_ee_pose(retreat_pos, use_downward_constraint=False, task_type = "transit"):
         #     print("❌ Failed to plan retreat motion")
@@ -1391,41 +1389,65 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         qpos_adr = model.jnt_qposadr[jid] # index into qpos
         # copy 7 values (3 pos + 4 quat) from keyframe 0
         data.qpos[qpos_adr:qpos_adr+7] = self.object3_init_qpos
-        mujoco.mj_forward(model, data)
-            
-    def get_object_bid(self, object_name: str) -> Optional[np.ndarray]:
-        """Get body ID of an object in the scene."""
-        try:
-            body_id = mujoco.mj_name2id(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, object_name)
-            if body_id == -1:
-                print(f"❌ Object '{object_name}' not found")
-                return None
+        mujoco.mj_forward(model, data) 
 
-            print(f"🆔 {object_name} bid: {body_id}")
-            return body_id
-        except Exception as e:
-            print(f"❌ Error getting {object_name} position: {e}")
-            return None
+    def generate_severity_table(self):
+        """
+        rules: 
+            red blocks named "obstacle_hard_xyz" -> severity = 10
+            white blocks named "obstacles_soft_xyz" -> severity = 2
+            table -> severity = 1
+            otherwise -> severity = 0
+        """
+        nbodies = self.scene_model.nbody
+        body_names = [mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, bid) for bid in np.arange(nbodies)]
+        severity_table = np.zeros(nbodies)
+        for i, name in enumerate(body_names):
+            if "obstacle_hard" in name:
+                severity_table[i] = 10
+            elif "obstacle_soft" in name:
+                severity_table[i] = 2
+            elif "table" in name:
+                severity_table[i] = 1
+        return severity_table
 
-    def get_all_obstacle_pos_bids(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Get the positions and bids of all 'obstacle' position and bids in the scene."""
-        # all bodies
-        body_names = [mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, i) for i in range(self.scene_model.nbody)]
-        # keep only the ones which have 'obstacle' in them
-        obs_bids = [i for i, name in enumerate(body_names) if "obstacle" in name]
-        obs_names = np.array(body_names)[obs_bids].tolist()
-        # get positions
-        obs_pos = self.scene_data.xpos[obs_bids].copy()
-        for i in range(len(obs_bids)):
-            print(f"📍 {obs_names[i]} position: {obs_pos[i]}")
-        return obs_bids, obs_pos
+    # def get_object_bid(self, object_name: str) -> Optional[np.ndarray]:
+    #     """Get body ID of an object in the scene."""
+    #     try:
+    #         body_id = mujoco.mj_name2id(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, object_name)
+    #         if body_id == -1:
+    #             print(f"❌ Object '{object_name}' not found")
+    #             return None
+
+    #         print(f"🆔 {object_name} bid: {body_id}")
+    #         return body_id
+    #     except Exception as e:
+    #         print(f"❌ Error getting {object_name} position: {e}")
+    #         return None
+
+    # def get_all_obstacle_pos_bids(self) -> Tuple[np.ndarray, np.ndarray]:
+    #     """Get the positions and bids of all 'obstacle' position and bids in the scene."""
+    #     # all bodies
+    #     body_names = [mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, i) for i in range(self.scene_model.nbody)]
+    #     # keep only the ones which have 'obstacle' in them
+    #     obs_bids = [i for i, name in enumerate(body_names) if "obstacle" in name]
+    #     obs_names = np.array(body_names)[obs_bids].tolist()
+    #     # get positions
+    #     obs_pos = self.scene_data.xpos[obs_bids].copy()
+    #     for i in range(len(obs_bids)):
+    #         print(f"📍 {obs_names[i]} position: {obs_pos[i]}")
+    #     return obs_bids, obs_pos
 
 def main():
     """Main function."""
     
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", default="scene.xml", type=str)
+    args = parser.parse_args()
+
     # Update these paths to your XML files
     XML_PATH = "/Users/saghani/Workspace/Research/GenAISim/"
-    scene_xml_path = XML_PATH + "franka_emika_panda/scene.xml"
+    scene_xml_path = XML_PATH + "franka_emika_panda/"+args.f
     robot_xml_path = XML_PATH + "franka_emika_panda/panda.xml"
 
     try:

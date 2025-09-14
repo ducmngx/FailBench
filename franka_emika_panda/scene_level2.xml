@@ -44,23 +44,23 @@
 
 
     <!-- First Row -->
-      <body name="obstacle1" pos="-0.2 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle1_joint" type="free"/>
+      <body name="obstacle_soft1" pos="-0.2 -0.25 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft1_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle2" pos="-0.1 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle2_joint" type="free"/>
+      <body name="obstacle_soft2" pos="-0.1 -0.25 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft2_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle3" pos="0.0 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle3_joint" type="free"/>
+      <body name="obstacle_soft3" pos="0.0 -0.25 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft3_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle4" pos="0.1 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle4_joint" type="free"/>
+      <body name="obstacle_soft4" pos="0.1 -0.25 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft4_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
@@ -70,28 +70,28 @@
       </body>
 
     <!-- Second Row -->
-      <body name="obstacle5" pos="-0.2 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle5_joint" type="free"/>
+      <body name="obstacle_soft5" pos="-0.2 -0.35 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft5_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle6" pos="-0.1 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle6_joint" type="free"/>
+      <body name="obstacle_hard6" pos="-0.1 -0.35 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard6_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle7" pos="0.0 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle7_joint" type="free"/>
+      <body name="obstacle_soft7" pos="0.0 -0.35 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft7_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle8" pos="0.1 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle8_joint" type="free"/>
+      <body name="obstacle_soft8" pos="0.1 -0.35 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft8_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle9" pos="0.2 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle9_joint" type="free"/>
+      <body name="obstacle_soft9" pos="0.2 -0.35 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft9_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
@@ -101,23 +101,23 @@
         <geom type="box" size="0.03 0.03 0.03" rgba="0.0 0.0 0.35 1"/>
       </body>
 
-      <body name="obstacle10" pos="-0.1 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle10_joint" type="free"/>
+      <body name="obstacle_hard10" pos="-0.1 -0.45 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard10_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle11" pos="0.0 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle11_joint" type="free"/>
+      <body name="obstacle_hard11" pos="0.0 -0.45 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard11_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle12" pos="0.1 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle12_joint" type="free"/>
+      <body name="obstacle_hard12" pos="0.1 -0.45 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard12_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle13" pos="0.2 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle13_joint" type="free"/>
+      <body name="obstacle_hard13" pos="0.2 -0.45 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard13_joint" type="free"/>
         <geom type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
