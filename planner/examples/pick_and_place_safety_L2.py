@@ -1165,8 +1165,69 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             self.current_viewer = None
             time.sleep(5)
             # input("\nPress Enter to exit...")
- 
-    def pick_and_place_generate_traj(self, waypoint_pos, sample_i) -> bool:
+    
+    def play_saved_trajectories(self, trajectory_files):
+        """Run the full physics pick and place demo."""
+        print("\n🎬 Starting FULL PHYSICS Pick and Place Demo")
+        print("=" * 50)
+        
+        obj_pos = self.get_object_position("object3")
+        if obj_pos is None:
+            return False
+        self.object3_init_qpos = np.append(obj_pos.copy(),[0,0,0,1])
+
+        with mujoco.viewer.launch_passive(self.scene_model, self.scene_data) as viewer:
+            self.current_viewer = viewer
+            
+            # print("\n📋 This PHYSICS demo will:")
+            # print("1. Use physics simulation for ALL gripper operations")
+            # print("2. Monitor contact forces during grasping")
+            # print("3. Verify grasp quality with lift tests")
+            # print("4. Handle grasp failures with recovery strategies")
+            # print("5. Use physics-based position control throughout")
+            # print("\nEach phase requires Enter to proceed...")
+
+            # print("Playing saved trajectories in folder")
+            
+            # input("\nPress Enter to start full physics demo...")
+            time.sleep(3)
+
+            for sample_i, trajectory_file in enumerate(trajectory_files):
+                print("\nPlaying trajectory file: "+os.path.basename(trajectory_file))
+
+                self.exp_traj_manager.load_from_file(trajectory_file)
+                saved_trajectories = None
+                if "baseline" in trajectory_file:
+                    # no waypoint
+                    waypoint_pos = None
+                    saved_trajectories = {"phase7": self.exp_traj_manager.trajectories[self.scene_name]['baseline']['trajectory']}
+                else:
+                    waypoint_pos = self.exp_traj_manager.trajectories[self.scene_name]['phase6']['goal_pos']
+                    saved_trajectories = {}
+                    saved_trajectories["phase6"] = self.exp_traj_manager.trajectories[self.scene_name]['phase6']['trajectory']
+                    saved_trajectories["phase7"] = self.exp_traj_manager.trajectories[self.scene_name]['phase7']['trajectory']
+
+
+                # Run full physics pick and place
+                try:
+                    self.reset_object3("object3")
+                    self._set_home_position()
+                    success = self.pick_and_place_generate_traj(waypoint_pos, sample_i, saved_trajectories)
+                except Exception as e:
+                    print("huh?")
+                    continue
+
+                if success:
+                    print("\n✅ Full physics pick and place demo completed successfully!")
+                else:
+                    print("\n❌ Full physics pick and place demo failed")
+                    break
+            
+            self.current_viewer = None
+            time.sleep(5)
+            # input("\nPress Enter to exit...")
+    
+    def pick_and_place_generate_traj(self, waypoint_pos=None, sample_i=None, saved_trajectories=None) -> bool:
         """Complete pick and place demo using physics simulation throughout."""
         
         print("\n🎯 Physics-Based Pick and Place Demo: Object3")
@@ -1265,38 +1326,66 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             height_gained = current_obj_pos[2] - obj_pos[2]
             print(f"   Object height gained: {height_gained*100:.1f}cm")
         
-        # # Phase 6: Transport to place location
-        # print("\n" + "="*30)
-        # print("PHASE 6: TRANSPORT TO WAYPOINT")
-        # print("="*30)
-        # # input("Press Enter to move to place location...")
-        
-        # if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
-        #     print("❌ Failed to plan transport motion")
-        #     return False
-        
-        # print("storing trajectory")
-        # me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
-        # self.exp_traj_manager.store_trajectory(self.scene_name, "phase6", self.current_path, goal_pos=waypoint_pos, me_cost=me_cost, safety_cost=safety_cost)
-        
-        # self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
 
-        # Phase 6: Transport to place location
+        # optional Phase 6: Transport to waypoint
+        if waypoint_pos is not None:
+            print("\n" + "="*30)
+            print("PHASE 6: TRANSPORT TO WAYPOINT")
+            print("="*30)
+            # input("Press Enter to move to place location...")
+            if saved_trajectories is None:
+                if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
+                    print("❌ Failed to plan transport motion")
+                    return False
+            
+                print("storing trajectory")
+                me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
+                self.exp_traj_manager.store_trajectory(self.scene_name, "phase6", self.current_path, goal_pos=waypoint_pos, me_cost=me_cost, safety_cost=safety_cost)
+            else:
+                print("   Moving to start of saved trajectory")
+                self.current_path = [saved_trajectories['phase6'][0]]
+                self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
+                print("   Allowing robot to settle...")
+                for _ in range(10):  # 100 physics steps
+                    mujoco.mj_step(self.scene_model, self.scene_data)
+                    if self.current_viewer is not None:
+                        self.current_viewer.sync()
+                    time.sleep(0.005)
+                
+                self.current_path = saved_trajectories['phase6']
+            print("    Executing saved trajectory")
+            # GET SITE POSITION HERE AND TRACK ITS TRAJECTORY WHILE PATH IS GETTING EXECUTED
+            self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
+
+
+        # Phase 7: Transport to place location
         print("\n" + "="*30)
         print("PHASE 7: TRANSPORT TO FINAL PLACE")
         print("="*30)
         # input("Press Enter to move to place location...")
     
-        
-        if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True, task_type = "transit"):
-            print("❌ Failed to plan transport motion")
-            return False
+        if saved_trajectories is None:
+            if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True, task_type = "transit"):
+                print("❌ Failed to plan transport motion")
+                return False
 
-        print("storing trajectory")
-        me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
-        self.exp_traj_manager.store_trajectory(self.scene_name, "baseline", self.current_path, goal_pos=place_approach_pos, me_cost=me_cost, safety_cost=safety_cost)
-        self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_sample_"+str(sample_i)+".pkl")
-
+            print("storing trajectory")
+            me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
+            self.exp_traj_manager.store_trajectory(self.scene_name, "baseline", self.current_path, goal_pos=place_approach_pos, me_cost=me_cost, safety_cost=safety_cost)
+            self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_sample_"+str(sample_i)+".pkl")
+        else:
+            print("   Moving to start of saved trajectory")
+            self.current_path = [saved_trajectories['phase7'][0]]
+            self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
+            print("   Allowing robot to settle...")
+            for _ in range(10):  # 100 physics steps
+                mujoco.mj_step(self.scene_model, self.scene_data)
+                if self.current_viewer is not None:
+                    self.current_viewer.sync()
+                time.sleep(0.005)
+            self.current_path = saved_trajectories['phase7']
+        print("    Executing saved trajectory")
+        # GET SITE POSITION HERE AND TRACK ITS TRAJECTORY WHILE PATH IS GETTING EXECUTED
         self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
         
         # Phase 7: Lower to place position
@@ -1380,6 +1469,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         
         return True
 
+    
     def reset_object3(self, body_name: str):
         model = self.scene_model
         data = self.scene_data
@@ -1411,32 +1501,6 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
                 severity_table[i] = 1
         return severity_table
 
-    # def get_object_bid(self, object_name: str) -> Optional[np.ndarray]:
-    #     """Get body ID of an object in the scene."""
-    #     try:
-    #         body_id = mujoco.mj_name2id(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, object_name)
-    #         if body_id == -1:
-    #             print(f"❌ Object '{object_name}' not found")
-    #             return None
-
-    #         print(f"🆔 {object_name} bid: {body_id}")
-    #         return body_id
-    #     except Exception as e:
-    #         print(f"❌ Error getting {object_name} position: {e}")
-    #         return None
-
-    # def get_all_obstacle_pos_bids(self) -> Tuple[np.ndarray, np.ndarray]:
-    #     """Get the positions and bids of all 'obstacle' position and bids in the scene."""
-    #     # all bodies
-    #     body_names = [mujoco.mj_id2name(self.scene_model, mujoco.mjtObj.mjOBJ_BODY, i) for i in range(self.scene_model.nbody)]
-    #     # keep only the ones which have 'obstacle' in them
-    #     obs_bids = [i for i, name in enumerate(body_names) if "obstacle" in name]
-    #     obs_names = np.array(body_names)[obs_bids].tolist()
-    #     # get positions
-    #     obs_pos = self.scene_data.xpos[obs_bids].copy()
-    #     for i in range(len(obs_bids)):
-    #         print(f"📍 {obs_names[i]} position: {obs_pos[i]}")
-    #     return obs_bids, obs_pos
 
 def main():
     """Main function."""
@@ -1449,6 +1513,19 @@ def main():
     XML_PATH = "/mnt/saad/FailBench/"
     scene_xml_path = XML_PATH + "franka_emika_panda/"+args.f
     robot_xml_path = XML_PATH + "franka_emika_panda/panda.xml"
+
+    if "2" in args.f:
+        collected_traj_folder = "scene2_trajs"
+    elif "3" in args.f:
+        collected_traj_folder = "scene3_trajs"
+    else:
+        collected_traj_folder = "scene1_trajs"
+
+    print("PLAYING ALL SAVED TRAJECTORIES IN FOLDER "+collected_traj_folder)
+
+    repo_path = os.getcwd()
+    collected_traj_folder = os.path.join(repo_path, "collected_trajs", collected_traj_folder)
+    saved_trajs = [os.path.join(collected_traj_folder, f) for f in os.listdir(collected_traj_folder)]
 
     try:
         # Create pick and place demo
@@ -1464,7 +1541,8 @@ def main():
         # demo.landscape_test()
 
         # Run the demo
-        demo.generate_multiple_trajectories()
+        # demo.generate_multiple_trajectories()
+        demo.play_saved_trajectories(saved_trajs)
     
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
