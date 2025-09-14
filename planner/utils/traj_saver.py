@@ -66,6 +66,7 @@ class ExperimentTrajectoryManager:
                 # print(f"    Trajectory: {plan}.")
                 # print(f"    Data type: {type(plan[0])}")
     
+
     def save_to_file(self, filename="experiment_trajectories.pkl"):
         """Save all trajectories to file."""
         import pickle
@@ -86,7 +87,7 @@ class ExperimentTrajectoryManager:
         with open(filenames, 'rb') as f:
             trajectories = pickle.load(f)
         self.trajectories.update(trajectories)
-        print(f"Loaded trajectories from {filenames}")
+        print(f"Updated trajectories from {filenames}")
 
 
 

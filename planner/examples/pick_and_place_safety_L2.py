@@ -1131,7 +1131,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         # waypoint is somewhere in between 
         rng = np.random.RandomState(self.seed)
 
-        num_samples = 10
+        num_samples = 1
         waypoint_pos = rng.random(size=(num_samples, 3)) * (obj_pos - obj1_pos) + obj1_pos
         
         with mujoco.viewer.launch_passive(self.scene_model, self.scene_data) as viewer:
@@ -1265,21 +1265,21 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             height_gained = current_obj_pos[2] - obj_pos[2]
             print(f"   Object height gained: {height_gained*100:.1f}cm")
         
-        # Phase 6: Transport to place location
-        print("\n" + "="*30)
-        print("PHASE 6: TRANSPORT TO WAYPOINT")
-        print("="*30)
-        # input("Press Enter to move to place location...")
+        # # Phase 6: Transport to place location
+        # print("\n" + "="*30)
+        # print("PHASE 6: TRANSPORT TO WAYPOINT")
+        # print("="*30)
+        # # input("Press Enter to move to place location...")
         
-        if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
-            print("❌ Failed to plan transport motion")
-            return False
+        # if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
+        #     print("❌ Failed to plan transport motion")
+        #     return False
         
-        print("storing trajectory")
-        me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
-        self.exp_traj_manager.store_trajectory(self.scene_name, "phase6", self.current_path, goal_pos=waypoint_pos, me_cost=me_cost, safety_cost=safety_cost)
+        # print("storing trajectory")
+        # me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
+        # self.exp_traj_manager.store_trajectory(self.scene_name, "phase6", self.current_path, goal_pos=waypoint_pos, me_cost=me_cost, safety_cost=safety_cost)
         
-        self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
+        # self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
 
         # Phase 6: Transport to place location
         print("\n" + "="*30)
@@ -1294,7 +1294,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
 
         print("storing trajectory")
         me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
-        self.exp_traj_manager.store_trajectory(self.scene_name, "phase7", self.current_path, goal_pos=place_approach_pos, me_cost=me_cost, safety_cost=safety_cost)
+        self.exp_traj_manager.store_trajectory(self.scene_name, "baseline", self.current_path, goal_pos=place_approach_pos, me_cost=me_cost, safety_cost=safety_cost)
         self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_sample_"+str(sample_i)+".pkl")
 
         self.execute_path(speed=0.5, use_physics=True, isGrasping=True)
@@ -1446,7 +1446,7 @@ def main():
     args = parser.parse_args()
 
     # Update these paths to your XML files
-    XML_PATH = "/Users/saghani/Workspace/Research/GenAISim/"
+    XML_PATH = "/mnt/saad/FailBench/"
     scene_xml_path = XML_PATH + "franka_emika_panda/"+args.f
     robot_xml_path = XML_PATH + "franka_emika_panda/panda.xml"
 
