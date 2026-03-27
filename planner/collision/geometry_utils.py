@@ -26,8 +26,8 @@ class EnhancedXMLSeparator:
         self.robot_model = robot_model
         self.scene_data = mujoco.MjData(self.scene_model)
         
-        print(f"Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
-        print(f"Robot: {self.robot_model.ngeom} geoms, {self.robot_model.njnt} joints")
+        # print(f"Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
+        # print(f"Robot: {self.robot_model.ngeom} geoms, {self.robot_model.njnt} joints")
         
         # Your existing code
         self.robot_names = self._get_robot_component_names()
@@ -66,7 +66,7 @@ class EnhancedXMLSeparator:
             if joint_name:
                 names['joints'].add(joint_name)
         
-        print(f"Robot components: {len(names['bodies'])} bodies, {len(names['geoms'])} geoms, {len(names['joints'])} joints")
+        # print(f"Robot components: {len(names['bodies'])} bodies, {len(names['geoms'])} geoms, {len(names['joints'])} joints")
         return names
     
     def _separate_components(self) -> Dict[str, List[int]]:
@@ -219,8 +219,8 @@ class SimpleXMLSeparator:
         self.robot_model = robot_model
         self.scene_data = mujoco.MjData(self.scene_model)
         
-        print(f"Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
-        print(f"Robot: {self.robot_model.ngeom} geoms, {self.robot_model.njnt} joints")
+        # print(f"Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
+        # print(f"Robot: {self.robot_model.ngeom} geoms, {self.robot_model.njnt} joints")
         
         # Get robot component names
         self.robot_names = self._get_robot_component_names()
@@ -255,7 +255,7 @@ class SimpleXMLSeparator:
             if joint_name:
                 names['joints'].add(joint_name)
         
-        print(f"Robot components: {len(names['bodies'])} bodies, {len(names['geoms'])} geoms, {len(names['joints'])} joints")
+        # print(f"Robot components: {len(names['bodies'])} bodies, {len(names['geoms'])} geoms, {len(names['joints'])} joints")
         return names
     
     def _separate_components(self) -> Dict[str, List[int]]:

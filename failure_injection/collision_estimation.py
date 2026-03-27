@@ -174,7 +174,7 @@ class CollisionEstimator:
             non_robot_geoms = non_robot_geoms[mask]
     
         
-        print(f"Non Robot Geoms: {[mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, gid) for gid in non_robot_geoms]}")
+        # print(f"Non Robot Geoms: {[mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, gid) for gid in non_robot_geoms]}")
         return non_robot_geoms
 
     def _init_robot_geoms(self, all_robot_joints_by_name):

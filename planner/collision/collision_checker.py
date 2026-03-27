@@ -25,6 +25,11 @@ class CollisionChecker:
         # self._xml_extractor = SimpleXMLSeparator(scene_model, robot_model)
         self.collision_pairs = self._xml_extractor.get_collision_pairs()
 
+        # self._xml_extractor.print_separation_report()
+
+        # print(self.collision_pairs[0][1])
+
+
 
     def set_robot_configuration_direct(self, robot_config):
         """Your existing method - perfect as is."""
@@ -68,7 +73,7 @@ class CollisionChecker:
                     if self._check_collision(geom1_id=geom1_id, 
                                            geom2_id=geom2_id, 
                                            threshold=threshold):
-                        print(f"Collision detected between geom {geom1_id} and geom {geom2_id}")
-                        print(f"Distance: {np.abs(mujoco.mj_geomDistance(self.scene_model, self.scene_data, geom1_id, geom2_id, distmax=0.1, fromto=np.zeros(6)))} -- Threshold: {threshold}")
+                        # print(f"Collision detected between geom {geom1_id} and geom {geom2_id}")
+                        # print(f"Distance: {np.abs(mujoco.mj_geomDistance(self.scene_model, self.scene_data, geom1_id, geom2_id, distmax=0.1, fromto=np.zeros(6)))} -- Threshold: {threshold}")
                         return True
         return False
