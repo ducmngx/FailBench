@@ -1,120 +1,99 @@
-from typing import List
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TrajectoryRecord:
+    """A single stored trajectory with associated metadata."""
+    trajectory: List[np.ndarray]
+    goal_pos: Optional[np.ndarray] = None
+    me_cost: Optional[Any] = None
+    safety_cost: Optional[Any] = None
+
 
 class ExperimentTrajectoryManager:
-    def __init__(self):
-        self.trajectories = {} # Store trajectories keyed by scenario name
-    
-    def store_trajectory(self, scenario_name, phase, trajectory, start_config=None, goal_config=None, goal_pos=None, me_cost=None, safety_cost=None):
-        """Plan with and without failure costs, store both."""
-        print(f"Storing trajectory for {scenario_name} at phase '{phase}'")
+    def __init__(self) -> None:
+        self.trajectories: Dict[str, Dict[str, TrajectoryRecord]] = {}
+
+    def store_trajectory(
+        self,
+        scenario_name: str,
+        phase: str,
+        trajectory: List[np.ndarray],
+        start_config: Optional[np.ndarray] = None,
+        goal_config: Optional[np.ndarray] = None,
+        goal_pos: Optional[np.ndarray] = None,
+        me_cost: Optional[Any] = None,
+        safety_cost: Optional[Any] = None,
+    ) -> None:
+        """Store a trajectory for a given scenario and phase."""
+        logger.info(f"Storing trajectory for {scenario_name} at phase '{phase}'")
 
         if scenario_name not in self.trajectories:
             self.trajectories[scenario_name] = {}
-            
-        # Store both trajectories
-        self.trajectories[scenario_name][phase] = {
-            # 'phase': phase,
-            'trajectory': trajectory,
-            # 'start_config': start_config.copy(),
-            # 'goal_config': goal_config.copy(),
-            'goal_pos': goal_pos,
-            "me_cost": me_cost,
-            "safety_cost": safety_cost
-        }
-        
-        print(f"Stored trajectory for {scenario_name} at  phase '{phase}'")
-    
-    def get_trajectory(self, scenario_name, phase):
+
+        self.trajectories[scenario_name][phase] = TrajectoryRecord(
+            trajectory=trajectory,
+            goal_pos=goal_pos,
+            me_cost=me_cost,
+            safety_cost=safety_cost,
+        )
+
+        logger.info(f"Stored trajectory for {scenario_name} at phase '{phase}'")
+
+    def get_trajectory(self, scenario_name: str, phase: str) -> Optional[TrajectoryRecord]:
         """Get stored trajectory for evaluation."""
         if scenario_name not in self.trajectories:
             return None
-        
-        return self.trajectories[scenario_name][phase]
-    
-    def report(self):
+        return self.trajectories[scenario_name].get(phase)
+
+    def report(self) -> None:
         """Report stored trajectories."""
-        print(f"\nStored Experiment Trajectories:")
-        
-        # Summary overview
+        logger.info("Stored Experiment Trajectories:")
+
         total_scenarios = len(self.trajectories)
         total_phases = sum(len(phases) for phases in self.trajectories.values())
-        print(f"Total scenarios: {total_scenarios}")
-        print(f"Total phases: {total_phases}")
-        
-        # List scenarios and their phases
+        logger.info(f"Total scenarios: {total_scenarios}")
+        logger.info(f"Total phases: {total_phases}")
+
         for scenario_name, phases in self.trajectories.items():
             phase_names = list(phases.keys())
-            print(f"- {scenario_name}: {phase_names}")
-        
-        print("\nDetailed Trajectories:")
+            logger.info(f"- {scenario_name}: {phase_names}")
+
+        logger.info("Detailed Trajectories:")
         for scenario_name, phases in self.trajectories.items():
-            print(f"\nScenario: {scenario_name}")
-            for phase_name, data in phases.items():
-
-                # Check if trajectories exist and get their lengths
-                plan = data['trajectory'] if data['trajectory'] else []
+            logger.info(f"Scenario: {scenario_name}")
+            for phase_name, record in phases.items():
+                plan = record.trajectory if record.trajectory else []
                 if len(plan) == 0:
-                    print(f"No traj saved in {scenario_name}/{phase_name}...")
+                    logger.warning(f"No traj saved in {scenario_name}/{phase_name}...")
                     continue
-                print(f"  Phase: {phase_name}")
-                print(f"    Length of traj: {len(plan)}.")
-                for k, val in data.items():
-                    print(f"    {k} ({type(val)}): {val}.")
-                # # print(f"    Scenario: {scenario_name}")
-                # print(f"    Trajectory: {plan}.")
-                # print(f"    Data type: {type(plan[0])}")
-                # print(f"    Trajectory: {plan}.")
-                # print(f"    Data type: {type(plan[0])}")
-    
+                logger.info(f"  Phase: {phase_name}")
+                logger.info(f"    Length of traj: {len(plan)}.")
 
-    def save_to_file(self, filename="experiment_trajectories.pkl"):
+    def save_to_file(self, filename: str = "experiment_trajectories.pkl") -> None:
         """Save all trajectories to file."""
         import pickle
         with open(filename, 'wb') as f:
             pickle.dump(self.trajectories, f)
-        print(f"Saved trajectories to {filename}")
-    
-    def load_from_file(self, filename="experiment_trajectories.pkl"):
+        logger.info(f"Saved trajectories to {filename}")
+
+    def load_from_file(self, filename: str = "experiment_trajectories.pkl") -> None:
         """Load trajectories from file."""
         import pickle
         with open(filename, 'rb') as f:
             self.trajectories = pickle.load(f)
-        print(f"Loaded trajectories from {filename}")
+        logger.info(f"Loaded trajectories from {filename}")
 
-    def update_from_file(self, filenames:str):
+    def update_from_file(self, filenames: str) -> None:
         """Load trajectories from file and adds to the dictionary of trajectories."""
         import pickle
         with open(filenames, 'rb') as f:
             trajectories = pickle.load(f)
         self.trajectories.update(trajectories)
-        print(f"Updated trajectories from {filenames}")
-
-
-
-# # Usage example:
-# trajectory_manager = ExperimentTrajectoryManager()
-
-# # Plan all scenarios upfront
-# '''
-
-# Description -- Phase -- Trajectory
-
-# '''
-# scenarios = [
-#     ("level01_base", "Pick", [0, 1, 2]),
-#     # ("transport", grasp_config, place_config, "transit"), 
-#     # ("retreat", place_config, home_config, "transit")
-# ]
-
-# for scenario_name, phase, trajectory in scenarios:
-#     trajectory_manager.store_trajectory(
-#         scenario_name, phase, trajectory
-#     )
-
-# # Save for later use
-# trajectory_manager.save_to_file("my_experiment_trajectories.pkl")
-
-# # During evaluation:
-# # trajectory_manager.load_from_file("my_experiment_trajectories.pkl")
-# # safe_trajectory = trajectory_manager.get_trajectory("pick_object3", use_failure_cost=True)
-# # baseline_trajectory = trajectory_manager.get_trajectory("pick_object3", use_failure_cost=False)
+        logger.info(f"Updated trajectories from {filenames}")

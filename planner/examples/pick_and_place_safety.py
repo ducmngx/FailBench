@@ -12,10 +12,9 @@ from typing import Optional
 from scipy.spatial.transform import Rotation as R
 from typing import List, Optional, Tuple, Callable, Union
 # Import existing modules
-from planner.algorithms.RRTplanner import *
-from planner.algorithms.TRRTFailure import *
-from planner.algorithms.STOMP import *
-# from planner.algorithms.RRTStar import JointSpaceRRTStarFailure
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
+from planner.algorithms.TRRTFailure import JointSpaceTRRTOMPL
+from planner.algorithms.STOMP import JointSpaceSTOMP
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace

@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import time
 import mujoco
@@ -7,7 +8,10 @@ import scipy.ndimage
 from planner.kinematics.inverse_kinematics import *
 from planner.algorithms.abstract_planner import *
 from planner.collision.collision_checker import CollisionChecker
+from planner.costs.failure_cost import FailureCostModel, SeverityConfig
 from failure_injection.collision_estimation import CollisionEstimator
+
+logger = logging.getLogger(__name__)
 
 class JointSpaceSTOMP():
     """
@@ -64,21 +68,25 @@ class JointSpaceSTOMP():
         self.table_penalty_rate = 50.0  # Penalty rate for being inside table area
         self.table_penetration_rate = 10.0    
         
-        # Failure probability model parameters  
-        self.llm_severity_map = {
-            12: 10,   # Target objects
-            13: 50,   # Avoid object - very high severity
-            13: 10,   # Target objects
-             0:  8    # Default for table 
-        }
-        self.max_failure_prob = 0.98
-        self.distance_decay_rate = 50.0
+        # Build shared cost model for object avoidance
+        self._severity_config = SeverityConfig(
+            severity_map={12: 10, 13: 50, 14: 10, 0: 8},
+            target_body_ids=self.target_bids,
+            max_failure_prob=0.98,
+            distance_decay_rate=50.0,
+            failure_weight=failure_weight,
+        )
+        self.cost_model = FailureCostModel(
+            scene_model=scene_model,
+            object_positions=object_positions,
+            config=self._severity_config,
+        )
         
         # STOMP state variables
         self.current_noise_stddev = 0.1  # Initial noise level
         self.trajectory_dof = 7  # Joint space dimensionality
         
-        print(f"STOMP initialized with {num_timesteps} timesteps, {num_rollouts} rollouts")
+        logger.info(f"STOMP initialized with {num_timesteps} timesteps, {num_rollouts} rollouts")
         
     def initialize_collision_checker(self, scene_model: mujoco.MjModel, robot_model: mujoco.MjModel):
         """Initialize collision checker."""
@@ -86,62 +94,11 @@ class JointSpaceSTOMP():
     
     def get_end_effector_position(self, config: np.ndarray) -> np.ndarray:
         """Get end effector position from joint configuration."""
-        temp_data = mujoco.MjData(self.model)
-        temp_data.qpos[:min(len(config), temp_data.qpos.shape[0])] = config[:temp_data.qpos.shape[0]]
-        mujoco.mj_forward(self.model, temp_data)
-        
-        try:
-            site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "end_effector")
-            if site_id != -1:
-                return temp_data.site_xpos[site_id].copy()
-        except:
-            pass
-        
-        return np.array([0, 0, 0.5])
-    
-    def smooth_severity_mapping(self, llm_severity: int) -> float:
-        """Convert discrete LLM severity to smooth values."""
-        severity_map = {
-            1: 0.1, 2: 0.3, 3: 0.6, 5: 1.2, 8: 3.0,
-            10: 8.0, 15: 20.0, 20: 50.0
-        }
-        
-        severities = sorted(severity_map.keys())
-        values = [severity_map[s] for s in severities]
-        return np.interp(llm_severity, severities, values)
-    
-    def distance_based_failure_prob_2d(self, config: np.ndarray) -> Dict[int, float]:
-        """Calculate failure probability using XY distance only."""
-        ee_pos = self.get_end_effector_position(config)
-        failure_probs = {}
-        
-        for obj_id, obj_pos in self.object_positions.items():
-            if obj_id in self.target_bids:
-                continue
-                
-            xy_distance = np.linalg.norm(ee_pos[:2] - obj_pos[:2])
-            prob = self.max_failure_prob * np.exp(-self.distance_decay_rate * xy_distance)
-            failure_probs[obj_id] = max(0.0, min(prob, self.max_failure_prob))
-        
-        return failure_probs
-    
+        return self.cost_model.get_end_effector_position(config)
+
     def contextual_severity_2d(self, obj_id: int, xy_distance: float) -> float:
-        """Apply distance-based falloff to severity."""
-        llm_severity = self.llm_severity_map.get(obj_id, 1)
-        base_severity = self.smooth_severity_mapping(llm_severity)
-        
-        base_rad = 0.5
-        if llm_severity >= 15:
-            danger_radius = base_rad * 8
-        elif llm_severity >= 10:
-            danger_radius = base_rad * 4
-        elif llm_severity >= 5:
-            danger_radius = base_rad * 2
-        else:
-            danger_radius = base_rad
-        
-        falloff = np.exp(-xy_distance / danger_radius)
-        return base_severity * falloff
+        """Apply distance-based falloff to severity (delegates to cost model)."""
+        return self.cost_model._contextual_severity(obj_id, xy_distance)
     
     def distance_based_table_cost_2d(self, config: np.ndarray, task_phase: str = "transit") -> tuple[float, float]:
         """Calculate table cost and distance - returns (probability, xy_distance)."""
@@ -203,24 +160,13 @@ class JointSpaceSTOMP():
     
     def state_cost(self, config: np.ndarray, task_type: str = "transit") -> float:
         """Calculate safety cost for a single joint configuration."""
-        # Your existing object avoidance cost
-        distance_probs = self.distance_based_failure_prob_2d(config)
-        object_cost = 0
-        ee_pos = self.get_end_effector_position(config)
-        
-        for obj_id, failure_prob in distance_probs.items():
-            obj_pos = self.object_positions.get(obj_id)
-            if obj_pos is None:
-                continue
-                
-            xy_distance = np.linalg.norm(ee_pos[:2] - obj_pos[:2])
-            severity = self.contextual_severity_2d(obj_id, xy_distance)
-            object_cost += failure_prob * severity
-        
-        # Add table avoidance cost
-        table_cost = self.table_cost(config, task_type)
-        
-        return (object_cost + table_cost) * self.failure_weight
+        # Object avoidance cost via shared model (already weighted)
+        object_cost = self.cost_model.state_cost_from_config(config)
+
+        # Add table avoidance cost (STOMP-specific)
+        table_cost_val = self.table_cost(config, task_type)
+
+        return object_cost + table_cost_val * self._severity_config.failure_weight
     
     def is_valid_config(self, config: np.ndarray) -> bool:
         """Check if configuration is collision-free."""
@@ -329,8 +275,8 @@ class JointSpaceSTOMP():
            d. Reduce noise level
         3. Return optimized trajectory
         """
-        print(f"Starting STOMP planning...")
-        print(f"Parameters: timesteps={self.num_timesteps}, rollouts={self.num_rollouts}, "
+        logger.info(f"Starting STOMP planning...")
+        logger.debug(f"Parameters: timesteps={self.num_timesteps}, rollouts={self.num_rollouts}, "
               f"iterations={self.stomp_max_iterations}")
         
         self.rng = np.random.RandomState(self.seed)
@@ -338,7 +284,7 @@ class JointSpaceSTOMP():
         # Initialize trajectory
         current_trajectory = self.generate_initial_trajectory(start_config, goal_config)
         initial_cost, _ = self.trajectory_cost(current_trajectory, task_type)
-        print(f"Initial trajectory cost: {initial_cost:.4f}")
+        logger.debug(f"Initial trajectory cost: {initial_cost:.4f}")
         
         best_trajectory = current_trajectory.copy()
         best_cost = initial_cost
@@ -375,38 +321,38 @@ class JointSpaceSTOMP():
             # Progress reporting
             if iteration % 20 == 0:
                 avg_cost = np.mean(costs)
-                print(f"Iter {iteration}: current_cost={current_cost:.4f}, "
+                logger.info(f"Iter {iteration}: current_cost={current_cost:.4f}, "
                       f"best_cost={best_cost:.4f}, avg_cost={avg_cost:.4f}, "
                       f"noise_std={self.current_noise_stddev:.6f}")
-                
+
                 # Check cost distribution along trajectory
                 max_waypoint_cost = np.max(cost_breakdown)
-                print(f"  Max waypoint cost: {max_waypoint_cost:.4f}")
+                logger.debug(f"  Max waypoint cost: {max_waypoint_cost:.4f}")
             
             # Early convergence check
             if self.current_noise_stddev < 1e-4:
-                print(f"Converged at iteration {iteration} (noise level too low)")
+                logger.info(f"Converged at iteration {iteration} (noise level too low)")
                 break
         
         # Use best trajectory found
         final_trajectory = best_trajectory
         final_cost, final_breakdown = self.trajectory_cost(final_trajectory, task_type)
         
-        print(f"\nSTOMP Results:")
-        print(f"  Initial cost: {initial_cost:.4f}")
-        print(f"  Final cost: {final_cost:.4f}")
-        print(f"  Improvement: {(initial_cost - final_cost):.4f} ({((initial_cost - final_cost)/initial_cost*100):.1f}%)")
+        logger.info(f"STOMP Results:")
+        logger.info(f"  Initial cost: {initial_cost:.4f}")
+        logger.info(f"  Final cost: {final_cost:.4f}")
+        logger.info(f"  Improvement: {(initial_cost - final_cost):.4f} ({((initial_cost - final_cost)/initial_cost*100):.1f}%)")
         
         # Analyze trajectory safety
         high_cost_waypoints = np.sum(final_breakdown > 10.0)
-        print(f"  High-cost waypoints: {high_cost_waypoints}/{self.num_timesteps}")
+        logger.debug(f"  High-cost waypoints: {high_cost_waypoints}/{self.num_timesteps}")
         
         # Check collision feasibility
         collision_free = all(self.is_valid_config(config) for config in final_trajectory)
-        print(f"  Collision-free: {collision_free}")
-        
+        logger.info(f"  Collision-free: {collision_free}")
+
         if not collision_free:
-            print("  WARNING: Final trajectory contains collisions")
+            logger.warning("  Final trajectory contains collisions")
             return None
         
         # Convert to list format expected by caller
@@ -414,32 +360,43 @@ class JointSpaceSTOMP():
     
     def debug_trajectory_costs(self, trajectory: np.ndarray):
         """Debug cost breakdown for each waypoint in trajectory."""
-        print("\nTrajectory Cost Analysis:")
-        print("Waypoint | EE Position (XY) | Safety Cost | Collision")
-        print("-" * 55)
+        logger.debug("Trajectory Cost Analysis:")
+        logger.debug("Waypoint | EE Position (XY) | Safety Cost | Collision")
+        logger.debug("-" * 55)
         
         for t, config in enumerate(trajectory):
             ee_pos = self.get_end_effector_position(config)
             safety_cost = self.state_cost(config)
             is_collision = not self.is_valid_config(config)
             
-            print(f"  {t:2d}     | ({ee_pos[0]:6.3f}, {ee_pos[1]:6.3f}) | {safety_cost:9.4f} | {is_collision}")
+            logger.debug(f"  {t:2d}     | ({ee_pos[0]:6.3f}, {ee_pos[1]:6.3f}) | {safety_cost:9.4f} | {is_collision}")
             
             # Highlight high-cost waypoints
             if safety_cost > 20:
                 obj2_pos = self.object_positions.get(13, np.zeros(3))
                 dist_to_obj2 = np.linalg.norm(ee_pos[:2] - obj2_pos[:2])
-                print(f"    ⚠️ HIGH COST waypoint - distance to obj2: {dist_to_obj2:.3f}m")
+                logger.warning(f"    HIGH COST waypoint - distance to obj2: {dist_to_obj2:.3f}m")
     
     def set_aggressive_avoidance_parameters(self):
         """Set parameters for strong obstacle avoidance."""
-        print("Setting aggressive STOMP avoidance parameters...")
-        self.failure_weight = 50.0
-        self.distance_decay_rate = 100.0
-        self.llm_severity_map[13] = 100  # Very high severity for object 2
+        logger.info("Setting aggressive STOMP avoidance parameters...")
         self.control_cost_weight = 1e-5  # Lower smoothness weight, prioritize safety
-        print(f"New parameters: failure_weight={self.failure_weight}, "
-              f"decay_rate={self.distance_decay_rate}")
+
+        # Rebuild cost model with aggressive parameters
+        self._severity_config = SeverityConfig(
+            severity_map={12: 10, 13: 100, 14: 10, 0: 8},
+            target_body_ids=self.target_bids,
+            max_failure_prob=0.98,
+            distance_decay_rate=100.0,
+            failure_weight=50.0,
+        )
+        self.cost_model = FailureCostModel(
+            scene_model=self.model,
+            object_positions=self.object_positions,
+            config=self._severity_config,
+        )
+        logger.debug(f"New parameters: failure_weight={self._severity_config.failure_weight}, "
+              f"decay_rate={self._severity_config.distance_decay_rate}")
     
     def visualize_trajectory_costs(self, trajectory: np.ndarray):
         """Analyze and visualize cost distribution along trajectory."""
@@ -457,22 +414,22 @@ class JointSpaceSTOMP():
         
         obj2_pos = self.object_positions.get(13, np.array([0, 0, 0]))
         
-        print(f"\nTrajectory Analysis:")
-        print(f"  Cost range: {costs.min():.4f} to {costs.max():.4f}")
-        print(f"  Mean cost: {costs.mean():.4f}")
-        print(f"  Std dev: {costs.std():.4f}")
+        logger.debug(f"Trajectory Analysis:")
+        logger.debug(f"  Cost range: {costs.min():.4f} to {costs.max():.4f}")
+        logger.debug(f"  Mean cost: {costs.mean():.4f}")
+        logger.debug(f"  Std dev: {costs.std():.4f}")
         
         # Find closest approach to object 2
         distances_to_obj2 = [np.linalg.norm(pos - obj2_pos[:2]) for pos in ee_positions]
         min_distance = min(distances_to_obj2)
         closest_idx = np.argmin(distances_to_obj2)
         
-        print(f"  Closest approach to obj2: {min_distance:.3f}m at waypoint {closest_idx}")
-        print(f"  Cost at closest point: {costs[closest_idx]:.4f}")
-        
+        logger.debug(f"  Closest approach to obj2: {min_distance:.3f}m at waypoint {closest_idx}")
+        logger.debug(f"  Cost at closest point: {costs[closest_idx]:.4f}")
+
         if min_distance < 0.1:
-            print("  ⚠️ Trajectory passes very close to object 2")
+            logger.warning("  Trajectory passes very close to object 2")
         elif min_distance > 0.2:
-            print("  ✅ Trajectory maintains good clearance from object 2")
+            logger.debug("  Trajectory maintains good clearance from object 2")
         
         return costs, ee_positions, distances_to_obj2

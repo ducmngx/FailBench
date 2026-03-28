@@ -12,10 +12,9 @@ from typing import Optional
 from scipy.spatial.transform import Rotation as R
 from typing import List, Optional, Tuple, Callable, Union
 # Import existing modules
-from planner.algorithms.RRTplanner import *
-from planner.algorithms.TRRTFailure import *
-from planner.algorithms.STOMP import *
-# from planner.algorithms.RRTStar import JointSpaceRRTStarFailure
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
+from planner.algorithms.TRRTFailure import JointSpaceTRRTOMPL
+from planner.algorithms.STOMP import JointSpaceSTOMP
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
@@ -265,7 +264,7 @@ class PandaPickAndPlace:
             # If constrained planning failed, try unconstrained as fallback
             if use_downward_constraint:
                 print("🔄 Trying fallback without orientation constraint...")
-                return self.plan_to_ee_pose(target_pos, use_downward_constraint=False)
+                return self.plan_to_ee_pose(target_pos, task_type=task_type, use_downward_constraint=False)
             return False
         
         # Try RRT to each goal
@@ -1464,3 +1463,172 @@ if __name__ == "__main__":
     for re in reports:
         for key, value in re.items():
             print(f"{key}: {value}")
+
+
+'''
+
+
+Completed episode 29/30
+scene_level2_RRTConnect_sample_0.pkl: [92]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+END OF ALL TRIALS
+
+
+
+
+
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: [84]
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: [84]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: [92]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [94]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [93, 94]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: [83, 84]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: [94]
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [93, 94]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: [84]
+scene_level2_RRTConnect_sample_1.pkl: [93, 94]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: [94]
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [94]
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [94]
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [93, 94]
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: []
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: [92]
+
+scene_level2_RRTConnect_sample_0.pkl: [95]
+scene_level2_RRTConnect_sample_7.pkl: [92]
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: []
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: [92]
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+scene_level2_RRTConnect_sample_0.pkl: [92]
+scene_level2_RRTConnect_sample_7.pkl: []
+scene_level2_RRTConnect_sample_1.pkl: []
+scene_level2_RRTConnect_new_baseline.pkl: [89]
+
+
+'''

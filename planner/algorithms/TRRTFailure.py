@@ -1,6 +1,7 @@
 import numpy as np
 import time
 import mujoco
+import logging
 from typing import List, Optional, Tuple, Callable, Union, Dict
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -9,8 +10,10 @@ from enum import Enum
 # Assuming imports from the IK module
 from planner.kinematics.inverse_kinematics import *
 from planner.algorithms.abstract_planner import *
-from planner.collision.collision_checker import CollisionChecker
+from planner.costs.failure_cost import FailureCostModel, SeverityConfig
 from failure_injection.collision_estimation import CollisionEstimator
+
+logger = logging.getLogger(__name__)
 
 class JointSpaceTRRTOMPL(AbstractRRTPlanner):
     """
@@ -30,13 +33,13 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
                  failure_weight: float = 2.0,               # Custom parameter
                  **kwargs):
         kwargs.pop('planning_space', None)
-        super().__init__(scene_model, ik_solver, planning_space=PlanningSpace.JOINT_SPACE, **kwargs)
-        
-        self.collision_threshold = collision_threshold
+        super().__init__(scene_model, ik_solver, robot_model=robot_model,
+                         collision_threshold=collision_threshold,
+                         planning_space=PlanningSpace.JOINT_SPACE, **kwargs)
+
         self.seed = seed
         self.rng = np.random.RandomState(self.seed)
-        
-        self.initialize_collision_checker(scene_model, robot_model)
+
         self.collision_estimator = collision_estimator
         
         # OMPL T-RRT parameters (exact match to C++)
@@ -57,33 +60,32 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         
         # Object information
         self.object_positions = object_positions
-        print(f"Object positions: {self.object_positions}")
+        logger.debug(f"Object positions: {self.object_positions}")
         self.target_bids = [12, 14]
         self.avoid_bids = [13]
-        
-        # Severity mapping for strong avoidance
-        self.llm_severity_map = {
-            12: 2,   # Target objects 
-            13: 20,  # Avoid object - very high severity  
-            14: 2    # Target objects
-        }
-        
-        # Aggressive parameters for avoidance
-        self.max_failure_prob = 0.98
-        self.distance_decay_rate = 50.0
+
+        # Build shared cost model
+        self._severity_config = SeverityConfig(
+            severity_map={12: 2, 13: 20, 14: 2},
+            target_body_ids=self.target_bids,
+            max_failure_prob=0.98,
+            distance_decay_rate=50.0,
+            failure_weight=failure_weight,
+        )
+        self.cost_model = FailureCostModel(
+            scene_model=scene_model,
+            object_positions=object_positions,
+            config=self._severity_config,
+        )
         
         # Statistics
         self.nodes_created = 0
         self.transition_tests_passed = 0
         self.transition_tests_failed = 0
         
-    def initialize_collision_checker(self, scene_model: mujoco.MjModel, robot_model: mujoco.MjModel):
-        """Initialize the collision checker."""
-        self.collision_checker = CollisionChecker(scene_model, robot_model)
-        
     def setup(self):
         """Setup T-RRT parameters exactly following OMPL setup()."""
-        print("Setting up T-RRT with OMPL parameters...")
+        logger.info("Setting up T-RRT with OMPL parameters...")
         
         # Set frontier threshold if not provided (OMPL does this in setup)
         if self.frontier_threshold is None or self.frontier_threshold < 1e-10:
@@ -91,7 +93,7 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             # Simplified workspace extent estimation
             workspace_extent = 2.0  # Approximate for robot arm
             self.frontier_threshold = workspace_extent * 0.01
-            print(f"Auto-set frontier threshold: {self.frontier_threshold}")
+            logger.info(f"Auto-set frontier threshold: {self.frontier_threshold}")
         
         # Setup TRRT specific variables (matching OMPL exactly)
         self.temp = self.init_temperature
@@ -100,93 +102,21 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         self.best_cost = float('inf')
         self.worst_cost = 0.0
         
-        print(f"T-RRT setup complete:")
-        print(f"  Initial temperature: {self.init_temperature}")
-        print(f"  Temp change factor: {self.temp_change_factor}")
-        print(f"  Frontier threshold: {self.frontier_threshold}")
-        print(f"  Frontier node ratio: {self.frontier_node_ratio}")
-        print(f"  Goal bias: {self.goal_bias}")
-        print(f"  Cost threshold: {self.cost_threshold}")
+        logger.debug(f"T-RRT setup complete:")
+        logger.debug(f"  Initial temperature: {self.init_temperature}")
+        logger.debug(f"  Temp change factor: {self.temp_change_factor}")
+        logger.debug(f"  Frontier threshold: {self.frontier_threshold}")
+        logger.debug(f"  Frontier node ratio: {self.frontier_node_ratio}")
+        logger.debug(f"  Goal bias: {self.goal_bias}")
+        logger.debug(f"  Cost threshold: {self.cost_threshold}")
         
-    def distance(self, config1: np.ndarray, config2: np.ndarray) -> float:
-        """Euclidean distance in joint space."""
-        return np.linalg.norm(config1 - config2)
-    
     def get_end_effector_position(self, config: np.ndarray) -> np.ndarray:
         """Get end effector position from joint configuration."""
-        temp_data = mujoco.MjData(self.model)
-        temp_data.qpos[:min(len(config), temp_data.qpos.shape[0])] = config[:temp_data.qpos.shape[0]]
-        mujoco.mj_forward(self.model, temp_data)
-        
-        try:
-            site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "end_effector")
-            if site_id != -1:
-                return temp_data.site_xpos[site_id].copy()
-        except:
-            pass
-        
-        return np.array([0, 0, 0.5])
-    
-    def smooth_severity_mapping(self, llm_severity: int) -> float:
-        """Convert discrete LLM severity to smooth values."""
-        severity_map = {
-            1: 0.1, 2: 0.3, 3: 0.6, 5: 1.2, 8: 3.0,
-            10: 8.0, 15: 20.0, 20: 50.0
-        }
-        
-        severities = sorted(severity_map.keys())
-        values = [severity_map[s] for s in severities]
-        return np.interp(llm_severity, severities, values)
-    
-    def distance_based_failure_prob_2d(self, config: np.ndarray) -> Dict[int, float]:
-        """Calculate failure probability using XY distance only."""
-        ee_pos = self.get_end_effector_position(config)
-        failure_probs = {}
-        
-        for obj_id, obj_pos in self.object_positions.items():
-            if obj_id in self.target_bids:
-                continue
-                
-            xy_distance = np.linalg.norm(ee_pos[:2] - obj_pos[:2])
-            prob = self.max_failure_prob * np.exp(-self.distance_decay_rate * xy_distance)
-            failure_probs[obj_id] = max(0.0, min(prob, self.max_failure_prob))
-        
-        return failure_probs
-    
-    def contextual_severity_2d(self, obj_id: int, xy_distance: float) -> float:
-        """Apply distance-based falloff to severity."""
-        llm_severity = self.llm_severity_map.get(obj_id, 1)
-        base_severity = self.smooth_severity_mapping(llm_severity)
-        
-        base_rad = 0.5
-        if llm_severity >= 15:
-            danger_radius = base_rad * 8
-        elif llm_severity >= 10:
-            danger_radius = base_rad * 4
-        elif llm_severity >= 5:
-            danger_radius = base_rad * 2
-        else:
-            danger_radius = base_rad
-        
-        falloff = np.exp(-xy_distance / danger_radius)
-        return base_severity * falloff
-    
+        return self.cost_model.get_end_effector_position(config)
+
     def state_cost(self, config: np.ndarray) -> float:
         """Calculate cost of a state (OMPL stateCost equivalent)."""
-        distance_probs = self.distance_based_failure_prob_2d(config)
-        total_cost = 0
-        ee_pos = self.get_end_effector_position(config)
-        
-        for obj_id, failure_prob in distance_probs.items():
-            obj_pos = self.object_positions.get(obj_id)
-            if obj_pos is None:
-                continue
-                
-            xy_distance = np.linalg.norm(ee_pos[:2] - obj_pos[:2])
-            severity = self.contextual_severity_2d(obj_id, xy_distance)
-            total_cost += failure_prob * severity
-        
-        return total_cost * self.failure_weight
+        return self.cost_model.state_cost_from_config(config)
     
     def motion_cost(self, from_config: np.ndarray, to_config: np.ndarray) -> float:
         """Calculate cost of motion between two states (OMPL motionCost equivalent)."""
@@ -251,13 +181,6 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         else:
             return self.ik_solver.get_random_valid_config(rng=self.rng)
     
-    def is_valid_config(self, config: np.ndarray) -> bool:
-        """Check if configuration is collision-free."""
-        return not self.collision_checker.check_collisions(
-            robot_config=config,
-            threshold=self.collision_threshold
-        )
-    
     def steer(self, from_config: np.ndarray, to_config: np.ndarray) -> Tuple[np.ndarray, float]:
         """
         Steer from near config toward random config.
@@ -302,7 +225,7 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         """
         T-RRT planning following OMPL solve() method exactly.
         """
-        print("Starting OMPL-exact T-RRT planning...")
+        logger.info("Starting OMPL-exact T-RRT planning...")
         
         # Setup (matching OMPL)
         self.setup()
@@ -318,8 +241,8 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         if len(self.tree) == 1:  # First solve call
             self.best_cost = self.worst_cost = start_cost
         
-        print(f"Start cost: {start_cost:.4f}")
-        print(f"Goal cost: {self.state_cost(goal_config):.4f}")
+        logger.debug(f"Start cost: {start_cost:.4f}")
+        logger.debug(f"Goal cost: {self.state_cost(goal_config):.4f}")
         
         # Solution tracking (matching OMPL)
         solution_node_idx = None
@@ -381,7 +304,7 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             if goal_distance < self.goal_tolerance:
                 solution_node_idx = new_idx
                 approx_difference = goal_distance
-                print(f"Goal reached in {iteration + 1} iterations!")
+                logger.info(f"Goal reached in {iteration + 1} iterations!")
                 break
             
             # Track best approximation - OMPL logic
@@ -392,15 +315,15 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             # Progress reporting
             if iteration % 200 == 0:
                 accept_rate = self.transition_tests_passed / max(1, self.transition_tests_passed + self.transition_tests_failed)
-                print(f"Iter {iteration}: temp={self.temp:.3f}, tree={len(self.tree)}, "
+                logger.info(f"Iter {iteration}: temp={self.temp:.3f}, tree={len(self.tree)}, "
                       f"accept_rate={accept_rate:.3f}, best_goal_dist={approx_difference:.4f}")
-                print(f"  Frontier/Non-frontier ratio: {self.nonfrontier_count}/{self.frontier_count} = {self.nonfrontier_count/self.frontier_count:.3f}")
+                logger.debug(f"  Frontier/Non-frontier ratio: {self.nonfrontier_count}/{self.frontier_count} = {self.nonfrontier_count/self.frontier_count:.3f}")
         
         # Solution processing - OMPL logic
         final_node_idx = solution_node_idx if solution_node_idx is not None else approx_solution_node_idx
         
         if final_node_idx is None:
-            print("No solution found")
+            logger.warning("No solution found")
             return None
         
         # Build path - OMPL path reconstruction
@@ -419,105 +342,88 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             for i in range(len(path)-1)
         ) if len(path) > 1 else 0
         
-        print(f"\nOMPL T-RRT Solution:")
-        print(f"  Created {self.nodes_created} states")
-        print(f"  Path length: {len(path)} waypoints")
-        print(f"  Total state cost: {total_state_cost:.4f}")
-        print(f"  Total motion cost: {total_motion_cost:.4f}")
-        print(f"  Final temperature: {self.temp:.4f}")
-        print(f"  Frontier nodes: {self.frontier_count}")
-        print(f"  Non-frontier nodes: {self.nonfrontier_count}")
-        print(f"  Transition success rate: {self.transition_tests_passed/(self.transition_tests_passed + self.transition_tests_failed):.3f}")
+        logger.info(f"\nOMPL T-RRT Solution:")
+        logger.info(f"  Created {self.nodes_created} states")
+        logger.info(f"  Path length: {len(path)} waypoints")
+        logger.info(f"  Total state cost: {total_state_cost:.4f}")
+        logger.info(f"  Total motion cost: {total_motion_cost:.4f}")
+        logger.debug(f"  Final temperature: {self.temp:.4f}")
+        logger.debug(f"  Frontier nodes: {self.frontier_count}")
+        logger.debug(f"  Non-frontier nodes: {self.nonfrontier_count}")
+        logger.debug(f"  Transition success rate: {self.transition_tests_passed/(self.transition_tests_passed + self.transition_tests_failed):.3f}")
         
         is_approximate = solution_node_idx is None
         if is_approximate:
-            print(f"  Solution is approximate (distance to goal: {approx_difference:.4f})")
+            logger.warning(f"  Solution is approximate (distance to goal: {approx_difference:.4f})")
         
         return path
     
     def debug_transition_behavior(self):
         """Debug the transition test behavior."""
-        print(f"\nTransition Test Debug:")
-        print(f"  Current temperature: {self.temp:.4f}")
-        print(f"  Initial temperature: {self.init_temperature:.4f}")
-        print(f"  Temp change factor: {self.temp_change_factor:.4f}")
-        print(f"  Cost range: {self.worst_cost - self.best_cost:.4f}")
-        print(f"  Passed/Failed: {self.transition_tests_passed}/{self.transition_tests_failed}")
+        logger.debug(f"\nTransition Test Debug:")
+        logger.debug(f"  Current temperature: {self.temp:.4f}")
+        logger.debug(f"  Initial temperature: {self.init_temperature:.4f}")
+        logger.debug(f"  Temp change factor: {self.temp_change_factor:.4f}")
+        logger.debug(f"  Cost range: {self.worst_cost - self.best_cost:.4f}")
+        logger.debug(f"  Passed/Failed: {self.transition_tests_passed}/{self.transition_tests_failed}")
         
         # Test transition probabilities for different costs
         test_costs = [0.1, 1.0, 5.0, 10.0, 50.0, 100.0]
-        print(f"  Acceptance probabilities:")
+        logger.debug(f"  Acceptance probabilities:")
         for cost in test_costs:
             prob = np.exp(-cost / self.temp)
-            print(f"    Cost {cost:6.1f}: P(accept) = {prob:.6f}")
+            logger.debug(f"    Cost {cost:6.1f}: P(accept) = {prob:.6f}")
         
         return self.temp
     
     def set_ompl_aggressive_parameters(self):
         """Set parameters for aggressive avoidance while maintaining OMPL structure."""
-        print("Setting OMPL-compatible aggressive parameters...")
-        
-        # Increase cost sensitivity
-        self.failure_weight = 5.0
-        self.distance_decay_rate = 80.0
+        logger.info("Setting OMPL-compatible aggressive parameters...")
         
         # Lower initial temperature for more selectivity
         self.init_temperature = 50.0
         self.temp = 50.0
-        
+
         # Smaller temperature increase factor (more selective)
         self.temp_change_factor = 0.05  # Will become 1.05 multiplier
-        
-        # Higher severity for object to avoid
-        self.llm_severity_map[13] = 100
-        
-        print(f"New parameters:")
-        print(f"  Failure weight: {self.failure_weight}")
-        print(f"  Distance decay: {self.distance_decay_rate}")
-        print(f"  Initial temp: {self.init_temperature}")
-        print(f"  Temp change factor: {self.temp_change_factor}")
-        print(f"  Object 2 severity: {self.llm_severity_map[13]}")
+
+        # Rebuild cost model with aggressive parameters
+        self._severity_config = SeverityConfig(
+            severity_map={12: 2, 13: 100, 14: 2},
+            target_body_ids=self.target_bids,
+            max_failure_prob=0.98,
+            distance_decay_rate=80.0,
+            failure_weight=5.0,
+        )
+        self.cost_model = FailureCostModel(
+            scene_model=self.model,
+            object_positions=self.object_positions,
+            config=self._severity_config,
+        )
+
+        logger.debug(f"New parameters:")
+        logger.debug(f"  Failure weight: {self._severity_config.failure_weight}")
+        logger.debug(f"  Distance decay: {self._severity_config.distance_decay_rate}")
+        logger.debug(f"  Initial temp: {self.init_temperature}")
+        logger.debug(f"  Temp change factor: {self.temp_change_factor}")
+        logger.debug(f"  Object 13 severity: {self._severity_config.severity_map[13]}")
 
 
     ##### DEBUGGING METHODS #####
 
     def distance_based_failure_prob_2d_ee(self, ee_pos: np.ndarray) -> Dict[int, float]:
         """Calculate failure probability using XY distance only."""
-        # ee_pos = self.get_end_effector_position(config)
-        failure_probs = {}
-        
-        for obj_id, obj_pos in self.object_positions.items():
-            if obj_id in self.target_bids:
-                continue
-                
-            xy_distance = np.linalg.norm(ee_pos[:2] - obj_pos[:2])
-            prob = self.max_failure_prob * np.exp(-self.distance_decay_rate * xy_distance)
-            failure_probs[obj_id] = max(0.0, min(prob, self.max_failure_prob))
-        
-        return failure_probs
-    
+        return self.cost_model.failure_probs(ee_pos)
+
     def state_cost_ee(self, ee_pos: np.ndarray) -> float:
-        """Calculate cost of a state (OMPL stateCost equivalent)."""
-        distance_probs = self.distance_based_failure_prob_2d_ee(ee_pos)
-        total_cost = 0
-        # ee_pos = self.get_end_effector_position(config)
-        print(f"EE Position: {ee_pos}, Distance-based failure probs: {distance_probs}")
-        for obj_id, failure_prob in distance_probs.items():
-            obj_pos = self.object_positions.get(obj_id)
-            if obj_pos is None:
-                continue
-                
-            xy_distance = np.linalg.norm(ee_pos[:2] - obj_pos[:2])
-            severity = self.contextual_severity_2d(obj_id, xy_distance)
-            total_cost += failure_prob * severity
-            print(f"\t\tObj {obj_id}: prob={failure_prob:.3f}, sev={severity:.3f}, contrib={failure_prob*severity:.3f}")
-        return total_cost * self.failure_weight
+        """Calculate cost of a state from end-effector position."""
+        return self.cost_model.state_cost(ee_pos)
 
     def verify_cost_landscape_grid(self, height=0.15, resolution=0.05):
         """Sample costs in a grid pattern around objects."""
         obj2_pos = self.object_positions.get(13)
         if obj2_pos is None:
-            print("Object 2 not found")
+            logger.warning("Object 2 not found")
             return None
         
         # Define sampling grid
@@ -561,37 +467,37 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
                 #     ik_failures += 1
         
         if not costs:
-            print("No valid IK solutions found in sampling region")
+            logger.warning("No valid IK solutions found in sampling region")
             return None
         
         costs = np.array(costs)
         positions = np.array(positions)
         
         # Analysis
-        print(f"Cost Landscape Analysis:")
-        print(f"  Samples: {len(costs)} valid, {ik_failures} IK failures")
-        print(f"  Cost range: {costs.min():.4f} to {costs.max():.4f}")
-        print(f"  Cost ratio: {costs.max()/costs.min():.2f}")
-        print(f"  Mean cost: {costs.mean():.4f}")
-        print(f"  Std dev: {costs.std():.4f}")
+        logger.info(f"Cost Landscape Analysis:")
+        logger.info(f"  Samples: {len(costs)} valid, {ik_failures} IK failures")
+        logger.info(f"  Cost range: {costs.min():.4f} to {costs.max():.4f}")
+        logger.info(f"  Cost ratio: {costs.max()/costs.min():.2f}")
+        logger.info(f"  Mean cost: {costs.mean():.4f}")
+        logger.info(f"  Std dev: {costs.std():.4f}")
         
         # Find high-cost regions (potential barriers)
         high_cost_threshold = costs.mean() + 2 * costs.std()
         high_cost_points = positions[costs > high_cost_threshold]
         
-        print(f"  High-cost barrier points: {len(high_cost_points)}")
+        logger.info(f"  High-cost barrier points: {len(high_cost_points)}")
         
         # Check if high-cost region surrounds object 2
         if len(high_cost_points) > 0:
             distances_to_obj2 = [np.linalg.norm(point[:2] - obj2_pos[:2]) 
                             for point in high_cost_points]
             avg_distance = np.mean(distances_to_obj2)
-            print(f"  Avg distance of barriers from obj2: {avg_distance:.3f}m")
-            
+            logger.info(f"  Avg distance of barriers from obj2: {avg_distance:.3f}m")
+
             if avg_distance < 0.3:
-                print("  ✓ High-cost barriers surround object 2")
+                logger.info("  High-cost barriers surround object 2")
             else:
-                print("  ⚠ High-cost barriers may be too far from object 2")
+                logger.warning("  High-cost barriers may be too far from object 2")
         
         return positions, costs
 
@@ -604,12 +510,12 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         distances = np.linspace(0.01, max_radius, num_samples)
         angles = [0, np.pi/4, np.pi/2, 3*np.pi/4]  # Sample in different directions
         
-        print(f"Radial Cost Profile from Object {center_obj_id}:")
+        logger.info(f"Radial Cost Profile from Object {center_obj_id}:")
         
         all_costs = []
         for angle in angles:
             direction_costs = []
-            print(f"\nDirection {angle*180/np.pi:.0f} degrees:")
+            logger.debug(f"\nDirection {angle*180/np.pi:.0f} degrees:")
             
             for dist in distances:
                 x = obj_pos[0] + dist * np.cos(angle)
@@ -639,24 +545,24 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         # Check for proper exponential decay
         valid_costs = [c for c in all_costs[0] if c is not None]  # Use first direction
         if len(valid_costs) >= 3:
-            print(f"\nCost decay analysis (first direction):")
+            logger.debug(f"\nCost decay analysis (first direction):")
             for i in range(1, len(valid_costs)):
                 if valid_costs[i-1] > 0:
                     decay_ratio = valid_costs[i] / valid_costs[i-1]
-                    print(f"  Step {i}: decay ratio = {decay_ratio:.4f}")
+                    logger.debug(f"  Step {i}: decay ratio = {decay_ratio:.4f}")
             
             # Should see exponential decay pattern
             first_half_avg = np.mean(valid_costs[:len(valid_costs)//2])
             second_half_avg = np.mean(valid_costs[len(valid_costs)//2:])
             overall_decay = second_half_avg / first_half_avg if first_half_avg > 0 else 0
             
-            print(f"  Overall decay (far/near): {overall_decay:.4f}")
+            logger.debug(f"  Overall decay (far/near): {overall_decay:.4f}")
             if overall_decay < 0.1:
-                print("  ✓ Strong decay - good for avoidance")
+                logger.info("  Strong decay - good for avoidance")
             elif overall_decay < 0.3:
-                print("  ✓ Moderate decay - should work")
+                logger.info("  Moderate decay - should work")
             else:
-                print("  ⚠ Weak decay - may not avoid effectively")
+                logger.warning("  Weak decay - may not avoid effectively")
         
         return distances, all_costs
     
@@ -667,7 +573,7 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
         obj3_pos = self.object_positions.get(14)
         
         if any(x is None for x in [obj1_pos, obj2_pos, obj3_pos]):
-            print("Not all object positions found")
+            logger.warning("Not all object positions found")
             return
 
         
@@ -690,7 +596,7 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             ]
         }
         
-        print("Path Cost Comparison:")
+        logger.info("Path Cost Comparison:")
         path_costs = {}
         
         for path_name, waypoints in paths.items():
@@ -717,9 +623,9 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             
             if valid_path:
                 path_costs[path_name] = total_cost
-                print(f"  {path_name:15}: {total_cost:.4f}")
+                logger.info(f"  {path_name:15}: {total_cost:.4f}")
             else:
-                print(f"  {path_name:15}: IK failed")
+                logger.warning(f"  {path_name:15}: IK failed")
         
         # Analysis
         if len(path_costs) >= 2:
@@ -728,14 +634,14 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             
             if direct_cost > 0 and around_cost > 0:
                 avoidance_benefit = direct_cost / around_cost
-                print(f"\nAvoidance benefit ratio: {avoidance_benefit:.2f}")
-                
+                logger.info(f"\nAvoidance benefit ratio: {avoidance_benefit:.2f}")
+
                 if avoidance_benefit > 5:
-                    print("  ✓ Strong incentive to avoid object 2")
+                    logger.info("  Strong incentive to avoid object 2")
                 elif avoidance_benefit > 2:
-                    print("  ✓ Moderate incentive to avoid")
+                    logger.info("  Moderate incentive to avoid")
                 else:
-                    print("  ⚠ Weak avoidance incentive")
+                    logger.warning("  Weak avoidance incentive")
         
         return path_costs
     
@@ -753,10 +659,10 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
             obj2_pos + np.array([0, -0.1, 0.15])
         ]
         
-        print("Cost Gradient Analysis:")
+        logger.debug("Cost Gradient Analysis:")
         
         for i, center_pos in enumerate(test_points):
-            print(f"\nGradient at point {i+1}:")
+            logger.debug(f"\nGradient at point {i+1}:")
             
             # Calculate numerical gradient
             delta = 0.02
@@ -799,7 +705,7 @@ class JointSpaceTRRTOMPL(AbstractRRTPlanner):
                         else:
                             direction_assessment = "toward obj2 ⚠"
                         
-                        print(f"  Direction {direction[:2]}: gradient = {gradient:.4f} ({direction_assessment})")
+                        logger.debug(f"  Direction {direction[:2]}: gradient = {gradient:.4f} ({direction_assessment})")
             
             except Exception as e:
-                print(f"  Error: {e}")
+                logger.warning(f"  Error: {e}")

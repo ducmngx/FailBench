@@ -12,10 +12,9 @@ from typing import Optional
 from scipy.spatial.transform import Rotation as R
 from typing import List, Optional, Tuple, Callable, Union
 # Import existing modules
-from planner.algorithms.RRTplanner import *
-from planner.algorithms.TRRTFailure import *
-from planner.algorithms.STOMP import *
-# from planner.algorithms.RRTStar import JointSpaceRRTStarFailure
+from planner.algorithms.RRTplanner import JointSpaceRRT, JointSpaceRRTConnect, JointSpaceRRTConnectFailure
+from planner.algorithms.TRRTFailure import JointSpaceTRRTOMPL
+from planner.algorithms.STOMP import JointSpaceSTOMP
 from planner.collision.collision_checker import CollisionChecker  
 from planner.kinematics.inverse_kinematics import IKSolver, EndEffectorTarget, IKResult
 from planner.algorithms.abstract_planner import PlanningSpace
@@ -312,11 +311,10 @@ class PandaPickAndPlace:
         
     def plan_to_ee_pose(self, target_pos: np.ndarray, task_type: str,use_downward_constraint: bool = False) -> bool:
         """Plan to end-effector pose using your IK + RRT."""
-        
-        print(f"🎯 Planning to EE Position: {target_pos}")
+        # print(f"🎯 Planning to EE Position: {target_pos}")
         # Create target with optional orientation constraint
         if use_downward_constraint:
-            print("   🔽 Using downward orientation constraint")
+            # print("   🔽 Using downward orientation constraint")
             # Create downward orientation quaternion [w, x, y, z]
             downward_rotation = R.from_euler('x', 180, degrees=True)
             quat_scipy = downward_rotation.as_quat()  # scipy format [x,y,z,w]
@@ -347,8 +345,7 @@ class PandaPickAndPlace:
                 position=target_pos,
                 frame_name="end_effector",
                 frame_type="site"
-            )
-        
+            )        
         # Try multiple IK seeds (increased attempts for constrained cases)
         max_attempts = 20 if use_downward_constraint else 10
         goal_configs = []
@@ -383,7 +380,7 @@ class PandaPickAndPlace:
         # Try RRT to each goal
         start_config = self.get_current_config()
 
-        print(f"Start config: {start_config} -- Trying {len(goal_configs)} goal configs")
+        # print(f"Start config: {start_config} -- Trying {len(goal_configs)} goal configs")
         
         for i, goal_config in enumerate(goal_configs):
             print(f"   Trying RRT to solution {i+1}/{len(goal_configs)}")
@@ -394,12 +391,12 @@ class PandaPickAndPlace:
                 frame_name="end_effector",
                 # task_type = task_type for STOMP im guessing
             )
-            print(f"Path first waypoint: {path[0]} -- Path last waypoint: {path[-1]}")
-            print(f"Start config: {start_config} -- Goal config: {goal_config} \n\n")
+            # print(f"Path first waypoint: {path[0]} -- Path last waypoint: {path[-1]}")
+            # print(f"Start config: {start_config} -- Goal config: {goal_config} \n\n")
             if path:
                 self.current_path = path
-                print(f"✅ Planning successful!")
-                print(f"   Waypoints: {len(path)}")
+                # print(f"✅ Planning successful!")
+                # print(f"   Waypoints: {len(path)}")
                 return True
         
         print("❌ RRT failed to reach any IK solution")
@@ -1057,7 +1054,7 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         self.scene_data = mujoco.MjData(self.scene_model)
         self.seed = seed
         
-        print(f"✅ Models loaded:")
+        print(f"✅ Models loaded from {scene_xml_path}:")
         print(f"   Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
         print(f"   Robot: {self.robot_model.ngeom} geoms, {self.robot_model.njnt} joints")
         
@@ -1122,18 +1119,19 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         approach_height = 0.12
         obj_pos[2] += approach_height
         obj1_pos[2] += approach_height
-        
-        y_padding = 0.1
 
-        obj_pos[1] += y_padding
-        obj1_pos[1] -= y_padding
+        waypoint_pos = (obj_pos + obj1_pos) / 2
+        
+        # y_padding = 0.1
+
+        # obj_pos[1] += y_padding
+        # obj1_pos[1] -= y_padding
 
         # waypoint is somewhere in between 
         rng = np.random.RandomState(self.seed)
 
         num_samples = 1
-        waypoint_pos = rng.random(size=(num_samples, 3)) * (obj_pos - obj1_pos) + obj1_pos
-        
+        # waypoint_pos = (obj_pos - obj1_pos) + obj1_pos #rng.random(size=(num_samples, 3)) * (obj_pos - obj1_pos) + obj1_pos
         with mujoco.viewer.launch_passive(self.scene_model, self.scene_data) as viewer:
             self.current_viewer = viewer
             
@@ -1153,8 +1151,9 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
                 try:
                     self.reset_object3("object3")
                     self._set_home_position()
-                    success = self.pick_and_place_generate_traj(waypoint_pos[i], i)
+                    success = self.pick_and_place_generate_traj(waypoint_pos, i)
                 except Exception as e:
+                    print(e)
                     continue
 
             if success:
@@ -1193,7 +1192,8 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             time.sleep(3)
 
             for sample_i, trajectory_file in enumerate(trajectory_files):
-                print("\nPlaying trajectory file: "+os.path.basename(trajectory_file))
+                print("\n\nPlaying trajectory file: "+os.path.basename(trajectory_file))
+                input("Start....")
 
                 self.exp_traj_manager.load_from_file(trajectory_file)
                 saved_trajectories = None
@@ -1258,24 +1258,24 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         place_pos = obj1_pos.copy()
         place_pos[2] = obj1_pos[2] + grasp_height + 0.08
         
-        print(f"📋 Physics Pick and Place Plan:")
-        print(f"  Object3 at: {obj_pos}")
-        print(f"  Approach:   {approach_pos}")
-        print(f"  Grasp:      {grasp_pos}")
-        print(f"  Place approach: {place_approach_pos}")
-        print(f"  Place:      {place_pos}")
+        # print(f"📋 Physics Pick and Place Plan:")
+        # print(f"  Object3 at: {obj_pos}")
+        # print(f"  Approach:   {approach_pos}")
+        # print(f"  Grasp:      {grasp_pos}")
+        # print(f"  Place approach: {place_approach_pos}")
+        # print(f"  Place:      {place_pos}")
         
         # Phase 1: Open gripper with physics
-        print("\n" + "="*30)
-        print("PHASE 1: PREPARATION")
-        print("="*30)
+        # print("\n" + "="*30)
+        # print("PHASE 1: PREPARATION")
+        # print("="*30)
         # # input("Press Enter to open gripper with physics...")
         # # self.open_gripper()
         
         # Phase 2: Approach object
-        print("\n" + "="*30)
-        print("PHASE 2: APPROACH OBJECT")
-        print("="*30)
+        # print("\n" + "="*30)
+        # print("PHASE 2: APPROACH OBJECT")
+        # print("="*30)
         # input("Press Enter to move to approach position...")
         if not self.plan_to_ee_pose(approach_pos, use_downward_constraint=True, task_type = "transit"):
             print("❌ Failed to plan to approach position")
@@ -1284,9 +1284,9 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         self.execute_path(speed=0.5, use_physics=False)
         
         # Phase 3: Move to grasp position
-        print("\n" + "="*30)
-        print("PHASE 3: POSITION FOR GRASPING")
-        print("="*30)
+        # print("\n" + "="*30)
+        # print("PHASE 3: POSITION FOR GRASPING")
+        # print("="*30)
         # input("Press Enter to move to grasp position...")
         if not self.plan_to_ee_pose(grasp_pos, use_downward_constraint=True, task_type = "pick"):
             print("❌ Failed to plan to grasp position")
@@ -1296,18 +1296,18 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
         self.execute_path(speed=0.5, use_physics=True)  # Slower for precision
         
         # Phase 4: Physics-based grasping
-        print("\n" + "="*30)
-        print("PHASE 4: PHYSICS-BASED GRASPING")
-        print("="*30)
+        # print("\n" + "="*30)
+        # print("PHASE 4: PHYSICS-BASED GRASPING")
+        # print("="*30)
         # input("Press Enter to grasp object with full physics...")
         
         self.close_gripper_gentle(target_force=5000.0)
         
         # Phase 5: Lift with physics verification
-        print("\n" + "="*30)
-        print("PHASE 5: LIFT OBJECT")
-        print("="*30)
-        # input("Press Enter to lift object...")
+        # print("\n" + "="*30)
+        # print("PHASE 5: LIFT OBJECT")
+        # print("="*30)
+        # # input("Press Enter to lift object...")
         
         # Plan lift motion
         lift_pos = approach_pos.copy()
@@ -1334,11 +1334,13 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
             print("="*30)
             # input("Press Enter to move to place location...")
             if saved_trajectories is None:
+                print(f"Hello I am here with waypoint {waypoint_pos}")
                 if not self.plan_to_ee_pose(waypoint_pos, use_downward_constraint=True, task_type = "transit"):
                     print("❌ Failed to plan transport motion")
                     return False
-            
-                print("storing trajectory")
+                
+                print("Have a plan")
+                # print("storing trajectory")
                 me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
                 self.exp_traj_manager.store_trajectory(self.scene_name, "phase6", self.current_path, goal_pos=waypoint_pos, me_cost=me_cost, safety_cost=safety_cost)
             else:
@@ -1369,10 +1371,13 @@ class PandaPickAndPlace_L2(PandaPickAndPlace):
                 print("❌ Failed to plan transport motion")
                 return False
 
-            print("storing trajectory")
+            # print("storing trajectory")
             me_cost, safety_cost = self.rrt_planner.get_trajectory_cost(self.current_path)
+            print(f"")
             self.exp_traj_manager.store_trajectory(self.scene_name, "baseline", self.current_path, goal_pos=place_approach_pos, me_cost=me_cost, safety_cost=safety_cost)
-            self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_sample_"+str(sample_i)+".pkl")
+            # self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_sample_"+str(sample_i)+".pkl")
+            self.exp_traj_manager.save_to_file(self.scene_name+"_RRTConnect_new_baseline.pkl")
+
         else:
             print("   Moving to start of saved trajectory")
             self.current_path = [saved_trajectories['phase7'][0]]
@@ -1506,20 +1511,22 @@ def main():
     """Main function."""
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", default="scene.xml", type=str)
+    parser.add_argument("-f", default="scene_level2.xml", type=str)
     args = parser.parse_args()
 
     # Update these paths to your XML files
-    XML_PATH = "/mnt/saad/FailBench/"
+    XML_PATH = "/home/aaron/workspace/FailBench/"
+    scene_xml_path = XML_PATH + "franka_emika_panda/scene_level2.xml"
     scene_xml_path = XML_PATH + "franka_emika_panda/"+args.f
     robot_xml_path = XML_PATH + "franka_emika_panda/panda.xml"
 
-    if "2" in args.f:
-        collected_traj_folder = "scene2_trajs"
-    elif "3" in args.f:
-        collected_traj_folder = "scene3_trajs"
-    else:
-        collected_traj_folder = "scene1_trajs"
+    collected_traj_folder = "scene2_trajs"
+    # if "2" in args.f:
+    #     collected_traj_folder = "scene2_trajs"
+    # elif "3" in args.f:
+    #     collected_traj_folder = "scene3_trajs"
+    # else:
+    #     collected_traj_folder = "scene1_trajs"
 
     print("PLAYING ALL SAVED TRAJECTORIES IN FOLDER "+collected_traj_folder)
 
@@ -1530,6 +1537,9 @@ def main():
     try:
         # Create pick and place demo
         demo = PandaPickAndPlace_L2(scene_xml_path, robot_xml_path, seed=15)
+        # demo = PandaPickAndPlace(scene_xml_path, robot_xml_path, seed=15)
+
+        # demo.run_demo_full_physics()
 
         '''
         Baseline RRT good seed: 15, 29, 49
@@ -1542,6 +1552,9 @@ def main():
 
         # Run the demo
         # demo.generate_multiple_trajectories()
+
+
+        # demo.exp_traj_manager.report()
         demo.play_saved_trajectories(saved_trajs)
     
     except FileNotFoundError as e:

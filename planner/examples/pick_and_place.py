@@ -45,10 +45,10 @@ class PandaPickAndPlace:
             scene_model=self.scene_model,
             robot_model=self.robot_model,
             ik_solver=self.ik_solver,
-            collision_threshold=0.0000005,  # 1cm threshold
+            collision_threshold=0.01,  # 1cm threshold
             planning_space=PlanningSpace.JOINT_SPACE,
             step_size=0.008,
-            goal_bias=0.8,
+            goal_bias=0.7,
             seed = 42
         )
         
@@ -514,7 +514,7 @@ class PandaPickAndPlace:
         if obj_pos is None:
             return False
         
-        obj2_pos = self.get_object_position("object2")
+        obj2_pos = self.get_object_position("object1")
         if obj2_pos is None:
             return False
         
@@ -643,6 +643,8 @@ class PandaPickAndPlace:
         if not self.plan_to_ee_pose(place_approach_pos, use_downward_constraint=True):
             print("❌ Failed to plan transport motion")
             return False
+        
+        print(f"Transport path {self.current_path}")
         
         self.execute_path(speed=0.25, use_physics=True, isGrasping=True)
         
@@ -863,8 +865,8 @@ def main():
     """Main function."""
     
     # Update these paths to your XML files
-    scene_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/scene.xml"
-    robot_xml_path = "/Users/saghani/Workspace/Research/GenAISim/franka_emika_panda/panda.xml"
+    scene_xml_path = "/home/aaron/workspace/FailBench/franka_emika_panda/scene_level3.xml"
+    robot_xml_path = "/home/aaron/workspace/FailBench/franka_emika_panda/panda.xml"
     
     try:
         # Create pick and place demo

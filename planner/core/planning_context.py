@@ -5,10 +5,13 @@ Central state management for RRT planning.
 This is the hub that all other modules use to access MuJoCo models and data.
 """
 
+import logging
 import numpy as np
 import mujoco
 from typing import Tuple, Optional
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class PlanningContext:
@@ -54,10 +57,10 @@ class PlanningContext:
         # Initialize to neutral position
         self._initialize_neutral_state()
         
-        print(f"PlanningContext initialized:")
-        print(f"  Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
-        print(f"  Robot: {self.robot_model.ngeom} geoms, {self.robot_dof} DOF")
-        print(f"  Joint limits: [{self.joint_lower_limits[:3]}, {self.joint_upper_limits[:3]}...]")
+        logger.info(f"PlanningContext initialized:")
+        logger.info(f"  Scene: {self.scene_model.ngeom} geoms, {self.scene_model.njnt} joints")
+        logger.info(f"  Robot: {self.robot_model.ngeom} geoms, {self.robot_dof} DOF")
+        logger.debug(f"  Joint limits: [{self.joint_lower_limits[:3]}, {self.joint_upper_limits[:3]}...]")
     
     def _initialize_neutral_state(self):
         """Initialize both simulation and planning data to neutral state."""
