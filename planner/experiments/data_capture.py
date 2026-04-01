@@ -1,5 +1,6 @@
 """Data capture utilities: offscreen rendering, contact extraction, state snapshots."""
 
+import math
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -150,6 +151,110 @@ class ContactExtractor:
 # ---------------------------------------------------------------------------
 # RobotStateCollector
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# ContactProjector — 3D world → 2D pixel projection
+# ---------------------------------------------------------------------------
+
+
+class ContactProjector:
+    """Project 3D world contact points to 2D pixel coordinates using MuJoCo camera."""
+
+    def __init__(self, model: mujoco.MjModel, width: int = 640, height: int = 480,
+                 camera_name: Optional[str] = None,
+                 camera_lookat: Optional[List[float]] = None,
+                 camera_distance: Optional[float] = None,
+                 camera_azimuth: Optional[float] = None,
+                 camera_elevation: Optional[float] = None,
+                 fovy: float = 45.0):
+        self.width = width
+        self.height = height
+        self._model = model
+
+        if camera_name is not None:
+            # Named camera from XML
+            cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, camera_name)
+            if cam_id < 0:
+                raise ValueError(f"Camera '{camera_name}' not found in model")
+            fovy_deg = model.cam_fovy[cam_id]
+            self.cam_pos = model.cam_pos[cam_id].copy()
+            self.cam_rot = model.cam_mat0[cam_id].reshape(3, 3).copy()
+        else:
+            # Free camera — extract pose via MjvScene
+            fovy_deg = fovy
+            data = mujoco.MjData(model)
+            mujoco.mj_forward(model, data)
+            cam = mujoco.MjvCamera()
+            if camera_lookat is not None:
+                cam.lookat[:] = camera_lookat
+            if camera_distance is not None:
+                cam.distance = camera_distance
+            if camera_azimuth is not None:
+                cam.azimuth = camera_azimuth
+            if camera_elevation is not None:
+                cam.elevation = camera_elevation
+            scene = mujoco.MjvScene(model, maxgeom=1000)
+            mujoco.mjv_updateScene(model, data, mujoco.MjvOption(), None,
+                                   cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
+            self.cam_pos = np.array(scene.camera[0].pos, dtype=np.float64)
+            fwd = np.array(scene.camera[0].forward, dtype=np.float64)
+            up = np.array(scene.camera[0].up, dtype=np.float64)
+            # MuJoCo cam frame: x=right, y=down-in-image, looks along -z
+            cam_z = -fwd
+            cam_y = -up
+            cam_x = np.cross(cam_y, cam_z)
+            cam_x /= np.linalg.norm(cam_x)
+            self.cam_rot = np.stack([cam_x, cam_y, cam_z])  # (3,3) rows = axes
+
+        # Intrinsics from vertical field-of-view
+        fovy_rad = math.radians(fovy_deg)
+        fy = (height / 2.0) / math.tan(fovy_rad / 2.0)
+        fx = fy
+        cx, cy = width / 2.0, height / 2.0
+        self.K = np.array([[fx, 0, cx],
+                           [0, fy, cy],
+                           [0,  0,  1]], dtype=np.float64)
+
+    def project(self, world_points: np.ndarray):
+        """Project (N, 3) world points to pixel coordinates.
+
+        Returns
+        -------
+        pixels : (N, 2) float64 — (u, v) pixel coordinates
+        depths : (N,) float64 — depth in front of camera (positive = visible)
+        """
+        pts = np.atleast_2d(world_points).astype(np.float64)
+        # Transform to camera frame: p_cam = R @ (p_world - cam_pos)
+        # R rows are camera axes in world, so R @ delta gives camera-frame coords
+        delta = pts - self.cam_pos
+        p_cam = delta @ self.cam_rot.T  # (N, 3) in camera frame
+
+        # MuJoCo camera convention: X=right, Y=down, looks along -Z
+        # Depth is along -Z, so positive depth = in front of camera
+        depth = -p_cam[:, 2]
+        # Avoid division by zero
+        safe_depth = np.where(depth > 1e-8, depth, 1e-8)
+
+        u = self.K[0, 0] * p_cam[:, 0] / safe_depth + self.K[0, 2]
+        v = self.K[1, 1] * p_cam[:, 1] / safe_depth + self.K[1, 2]
+
+        return np.column_stack([u, v]), depth
+
+    def in_frame(self, pixels: np.ndarray, depths: np.ndarray) -> np.ndarray:
+        """Boolean mask: True for points that fall within the image and are in front of camera."""
+        u, v = pixels[:, 0], pixels[:, 1]
+        return (depths > 0) & (u >= 0) & (u < self.width) & (v >= 0) & (v < self.height)
+
+    def geom_name(self, geom_id: int) -> str:
+        """Resolve a geom ID to its name, or 'geom_<id>' if unnamed."""
+        name = mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
+        return name if name else f"geom_{geom_id}"
+
+
+# ---------------------------------------------------------------------------
+# RobotStateCollector
+# ---------------------------------------------------------------------------
+
 
 class RobotStateCollector:
     """Capture robot state snapshots."""
