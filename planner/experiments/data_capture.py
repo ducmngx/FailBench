@@ -90,11 +90,10 @@ class OffscreenRenderer:
 # object3_geom = 86 is the grasped object.
 _OBJECT3_GEOM_ID = 86
 
-# Robot geom ID range (panda links + fingers). These are excluded from
-# "environment contact" extraction so we only keep object-vs-obstacle contacts.
-# Determined empirically from the compiled scene model; adjust if the XML changes.
-_ROBOT_GEOM_PREFIX = "link"
-_FINGER_GEOM_SUBSTRINGS = ("finger", "pad")
+# Robot body names — used to build the robot geom set via body membership
+# (robot geoms are unnamed in the Panda MJCF, so name-based detection doesn't work).
+_ROBOT_BODY_NAMES = {"world", "link0", "link1", "link2", "link3", "link4",
+                     "link5", "link6", "link7", "hand", "left_finger", "right_finger"}
 
 
 class ContactExtractor:
@@ -104,38 +103,48 @@ class ContactExtractor:
         self.model = model
         self.target_geom_id = target_geom_id
 
-        # Build set of robot geom IDs to exclude
-        self._robot_geom_ids = set()
-        for gid in range(model.ngeom):
-            name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid)
-            if name is None:
-                continue
-            lower = name.lower()
-            if lower.startswith(_ROBOT_GEOM_PREFIX) or any(s in lower for s in _FINGER_GEOM_SUBSTRINGS):
-                self._robot_geom_ids.add(gid)
+        # Build set of robot geom IDs via body membership
+        robot_body_ids = set()
+        for bid in range(model.nbody):
+            bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+            if bname in _ROBOT_BODY_NAMES:
+                robot_body_ids.add(bid)
+        self._robot_geom_ids = {gid for gid in range(model.ngeom)
+                                if model.geom_bodyid[gid] in robot_body_ids}
 
     def extract_contacts(self, model: mujoco.MjModel, data: mujoco.MjData,
-                         filter_target: bool = True) -> List[ContactPoint]:
+                         filter_target: bool = False,
+                         min_force: float = 1.0) -> List[ContactPoint]:
         """Extract contact points from current simulation state.
 
         If filter_target is True, only returns contacts involving target_geom_id
-        with non-robot geoms (i.e. object3 hitting obstacles / table).
+        with non-robot geoms (legacy object3-only mode).
+
+        Otherwise, returns all contacts where at least one geom is a non-robot
+        object (excludes robot self-contacts) and force exceeds min_force.
         """
         contacts: List[ContactPoint] = []
         for i in range(data.ncon):
             c = data.contact[i]
             g1, g2 = int(c.geom1), int(c.geom2)
 
+            # Always skip robot-vs-robot contacts
+            if g1 in self._robot_geom_ids and g2 in self._robot_geom_ids:
+                continue
+
             if filter_target:
-                # Must involve the target geom
+                # Legacy mode: must involve the target geom, exclude robot
                 if g1 != self.target_geom_id and g2 != self.target_geom_id:
                     continue
-                # Skip robot-object contacts (finger grasping, link brushing)
                 if g1 in self._robot_geom_ids or g2 in self._robot_geom_ids:
                     continue
 
             force = np.zeros(6)
             mujoco.mj_contactForce(model, data, i, force)
+
+            # Apply force threshold
+            if min_force > 0 and np.linalg.norm(force[:3]) < min_force:
+                continue
 
             contacts.append(ContactPoint(
                 pos=c.pos.copy(),

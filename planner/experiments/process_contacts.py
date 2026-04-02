@@ -6,7 +6,6 @@ import os
 from typing import Dict, List, Optional
 
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
@@ -97,17 +96,19 @@ def process_npz(npz_path: str, scene_xml_path: str,
         }
         contacts.append(record)
 
-        # Aggregate by the non-target object (the one that isn't object3_geom)
-        other = name_b if "object3" in name_a else name_a
-        if other not in obj_accum:
-            obj_accum[other] = {
-                "object": other,
+        # Aggregate by contact pair (both objects involved)
+        pair_key = tuple(sorted([name_a, name_b]))
+        pair_label = f"{pair_key[0]} vs {pair_key[1]}"
+        if pair_label not in obj_accum:
+            obj_accum[pair_label] = {
+                "object_a": pair_key[0],
+                "object_b": pair_key[1],
                 "contact_count": 0,
                 "peak_force_N": 0.0,
                 "total_force_N": 0.0,
                 "positions": [],
             }
-        acc = obj_accum[other]
+        acc = obj_accum[pair_label]
         acc["contact_count"] += 1
         acc["peak_force_N"] = max(acc["peak_force_N"], mag)
         acc["total_force_N"] += mag
@@ -119,7 +120,8 @@ def process_npz(npz_path: str, scene_xml_path: str,
         pos_array = np.array(acc["positions"])
         mean_pos = pos_array.mean(axis=0)
         summary[key] = {
-            "object": acc["object"],
+            "object_a": acc["object_a"],
+            "object_b": acc["object_b"],
             "contact_count": acc["contact_count"],
             "peak_force_N": round(acc["peak_force_N"], 4),
             "mean_force_N": round(acc["total_force_N"] / acc["contact_count"], 4),
@@ -183,23 +185,20 @@ def render_annotated_image(result: dict, output_path: str,
                         cmap="hot", s=4, alpha=0.6, edgecolors="none")
         plt.colorbar(sc, ax=ax, label="Force magnitude (normalized)", shrink=0.7)
 
-    # Label each impacted object at its mean pixel position
+    # Label impacted contact pairs at their mean pixel position
     summary = result["summary"]
-    for obj_name, info in summary.items():
-        mean_world = np.array([[info["mean_position"]["x"],
-                                info["mean_position"]["y"],
-                                info["mean_position"]["z"]]])
-        # We need a projector to convert mean position — use the stored pixels instead
-        # Find contacts for this object and average their pixel positions
+    for pair_name, info in summary.items():
+        # Average pixel positions for contacts in this pair
         obj_pixels = []
         for i, c in enumerate(result["contacts"]):
-            other = c["object_b"] if "object3" in c["object_a"] else c["object_a"]
-            if other == obj_name and result["in_frame"][i]:
+            pair = tuple(sorted([c["object_a"], c["object_b"]]))
+            pair_label = f"{pair[0]} vs {pair[1]}"
+            if pair_label == pair_name and result["in_frame"][i]:
                 obj_pixels.append(result["pixels"][i])
         if obj_pixels:
             mean_px = np.mean(obj_pixels, axis=0)
-            label = f"{obj_name}\n{info['peak_force_N']:.1f} N peak"
-            ax.annotate(label, xy=mean_px, fontsize=6, color="cyan",
+            label = f"{pair_name}\n{info['peak_force_N']:.1f} N"
+            ax.annotate(label, xy=mean_px, fontsize=5, color="cyan",
                         ha="center", va="bottom",
                         bbox=dict(boxstyle="round,pad=0.2", fc="black", alpha=0.6))
 
@@ -253,9 +252,9 @@ def print_summary(result: dict) -> None:
     print(f"\n{'='*60}")
     print(f"Contact Summary — {len(result['contacts']):,} total contacts")
     print(f"{'='*60}")
-    for obj_name, info in sorted(summary.items(), key=lambda x: -x[1]["peak_force_N"]):
+    for pair_name, info in sorted(summary.items(), key=lambda x: -x[1]["peak_force_N"]):
         mp = info["mean_position"]
-        print(f"  object3 contacted {obj_name}")
+        print(f"  {info['object_a']} vs {info['object_b']}")
         print(f"    at ({mp['x']:.3f}, {mp['y']:.3f}, {mp['z']:.3f})")
         print(f"    peak force: {info['peak_force_N']:.2f} N, "
               f"mean: {info['mean_force_N']:.2f} N, "

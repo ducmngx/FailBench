@@ -283,7 +283,8 @@ class ExperimentRunner:
             contacts: List[ContactPoint] = []
             for _ in range(config.post_failure_settle_steps):
                 mujoco.mj_step(self.model, self.data)
-                step_contacts = self.contact_extractor.extract_contacts(self.model, self.data)
+                step_contacts = self.contact_extractor.extract_contacts(
+                    self.model, self.data, filter_target=False, min_force=1.0)
                 contacts.extend(step_contacts)
 
             # Unique impacted geom IDs (excluding object3 itself)
