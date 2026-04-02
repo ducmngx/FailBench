@@ -255,9 +255,18 @@ class ContactProjector:
         return (depths > 0) & (u >= 0) & (u < self.width) & (v >= 0) & (v < self.height)
 
     def geom_name(self, geom_id: int) -> str:
-        """Resolve a geom ID to its name, or 'geom_<id>' if unnamed."""
+        """Resolve a geom ID to a human-readable name.
+
+        Named geoms use their MuJoCo name (with _geom suffix stripped for readability).
+        Unnamed geoms are resolved via their parent body name.
+        """
         name = mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
-        return name if name else f"geom_{geom_id}"
+        if name:
+            return name.replace("_geom", "")
+        # Unnamed geom — resolve via parent body
+        body_id = self._model.geom_bodyid[geom_id]
+        body_name = mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_BODY, body_id)
+        return body_name if body_name else f"geom_{geom_id}"
 
 
 # ---------------------------------------------------------------------------
