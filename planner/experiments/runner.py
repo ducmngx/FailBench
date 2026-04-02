@@ -48,6 +48,7 @@ class DataSample:
 
     # Pre-failure state (shared across all failure modes)
     pre_failure_rgb: np.ndarray
+    pre_failure_depth: Optional[np.ndarray]
     pre_failure_robot: RobotState
 
     # Per-failure-mode results
@@ -57,7 +58,9 @@ class DataSample:
     aggregate_contacts: List[ContactPoint]
     all_impacted_geom_ids: List[int]
 
+    # Optional fields
     post_failure_rgb: Optional[np.ndarray] = None
+    extra_camera_views: Optional[dict] = None
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +93,7 @@ class ExperimentRunner:
             camera_distance=config.camera_distance,
             camera_azimuth=config.camera_azimuth,
             camera_elevation=config.camera_elevation,
+            extra_cameras=config.extra_cameras,
         )
         self.contact_extractor = ContactExtractor(self.model)
         self.state_collector = RobotStateCollector(self.model)
@@ -258,8 +262,13 @@ class ExperimentRunner:
         """Capture pre-failure state, then fork for each failure mode."""
         config = self.config
 
-        # --- Capture pre-failure state ---
-        pre_rgb = self.renderer.render(self.data)
+        # --- Capture pre-failure state (all cameras) ---
+        all_views = self.renderer.render_all_cameras(self.data)
+        # Primary camera
+        primary_name = list(all_views.keys())[0]
+        pre_rgb, pre_depth = all_views[primary_name]
+        # Extra cameras
+        extra_views = {k: v for k, v in all_views.items() if k != primary_name}
         pre_robot = self.state_collector.snapshot(self.data)
         sim_time = float(self.data.time)
 
@@ -319,7 +328,9 @@ class ExperimentRunner:
             fail_step=fail_step,
             sim_time_at_failure=sim_time,
             pre_failure_rgb=pre_rgb,
+            pre_failure_depth=pre_depth,
             pre_failure_robot=pre_robot,
+            extra_camera_views=extra_views if extra_views else None,
             failure_results=failure_results,
             aggregate_contacts=all_contacts,
             all_impacted_geom_ids=sorted(all_geom_ids),

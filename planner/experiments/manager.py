@@ -72,6 +72,15 @@ def save_sample_npz(sample: DataSample, path: str) -> None:
         "seed": np.array([sample.seed], dtype=np.int32),
     }
 
+    if sample.pre_failure_depth is not None:
+        arrays["pre_depth"] = sample.pre_failure_depth
+
+    # Extra camera views (e.g., ee_cam)
+    if sample.extra_camera_views:
+        for cam_name, (rgb, depth) in sample.extra_camera_views.items():
+            arrays[f"{cam_name}_rgb"] = rgb
+            arrays[f"{cam_name}_depth"] = depth
+
     if sample.post_failure_rgb is not None:
         arrays["post_rgb"] = sample.post_failure_rgb
 

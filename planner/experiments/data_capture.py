@@ -48,14 +48,18 @@ class SimCheckpoint:
 # ---------------------------------------------------------------------------
 
 class OffscreenRenderer:
-    """Headless RGB rendering via mujoco.Renderer."""
+    """Headless RGB + depth rendering via mujoco.Renderer.
+
+    Supports multiple named cameras and/or a free camera.
+    """
 
     def __init__(self, model: mujoco.MjModel, height: int = 480, width: int = 640,
                  camera_name: Optional[str] = "overhead_cam",
                  camera_lookat: Optional[List[float]] = None,
                  camera_distance: Optional[float] = None,
                  camera_azimuth: Optional[float] = None,
-                 camera_elevation: Optional[float] = None):
+                 camera_elevation: Optional[float] = None,
+                 extra_cameras: Optional[List[str]] = None):
         self.model = model
         self.renderer = mujoco.Renderer(model, height, width)
 
@@ -73,10 +77,52 @@ class OffscreenRenderer:
                 cam.elevation = camera_elevation
             self.camera = cam
 
+        # Additional cameras (e.g., "ee_cam") rendered alongside primary
+        self.extra_cameras = extra_cameras or []
+
     def render(self, data: mujoco.MjData) -> np.ndarray:
-        """Render a single RGB frame. Returns (H, W, 3) uint8."""
+        """Render a single RGB frame from primary camera. Returns (H, W, 3) uint8."""
         self.renderer.update_scene(data, self.camera)
         return self.renderer.render()
+
+    def render_depth(self, data: mujoco.MjData) -> np.ndarray:
+        """Render a depth frame from primary camera. Returns (H, W) float32."""
+        self.renderer.update_scene(data, self.camera)
+        self.renderer.enable_depth_rendering()
+        depth = self.renderer.render().copy()
+        self.renderer.disable_depth_rendering()
+        return depth.astype(np.float32)
+
+    def render_rgbd(self, data: mujoco.MjData):
+        """Render RGB + depth from primary camera. Returns (rgb, depth)."""
+        self.renderer.update_scene(data, self.camera)
+        rgb = self.renderer.render().copy()
+        self.renderer.enable_depth_rendering()
+        depth = self.renderer.render().copy().astype(np.float32)
+        self.renderer.disable_depth_rendering()
+        return rgb, depth
+
+    def render_all_cameras(self, data: mujoco.MjData) -> dict:
+        """Render RGB + depth from primary and all extra cameras.
+
+        Returns dict mapping camera name to (rgb, depth) tuples.
+        """
+        result = {}
+
+        # Primary camera
+        primary_name = self.camera if isinstance(self.camera, str) else "free_cam"
+        result[primary_name] = self.render_rgbd(data)
+
+        # Extra cameras
+        for cam_name in self.extra_cameras:
+            self.renderer.update_scene(data, cam_name)
+            rgb = self.renderer.render().copy()
+            self.renderer.enable_depth_rendering()
+            depth = self.renderer.render().copy().astype(np.float32)
+            self.renderer.disable_depth_rendering()
+            result[cam_name] = (rgb, depth)
+
+        return result
 
     def close(self):
         self.renderer.close()

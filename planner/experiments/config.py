@@ -59,6 +59,9 @@ class ExperimentConfig:
     camera_azimuth: Optional[float] = None
     camera_elevation: Optional[float] = None
 
+    # Additional cameras (e.g., ["ee_cam"] for end-effector view)
+    extra_cameras: Optional[List[str]] = None
+
     # Post-failure settle
     post_failure_settle_steps: int = 500
 
