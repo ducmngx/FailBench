@@ -321,6 +321,31 @@ class ContactProjector:
         u, v = pixels[:, 0], pixels[:, 1]
         return (depths > 0) & (u >= 0) & (u < self.width) & (v >= 0) & (v < self.height)
 
+    def validate(self) -> None:
+        """Sanity-check that the projection orientation is correct.
+
+        Projects a point above the camera and one below, and verifies that
+        "above in world" maps to "lower V in image" (smaller V = higher in image).
+        Raises AssertionError if the Y-axis appears flipped.
+        """
+        above = self.cam_pos + np.array([0, 0, 0.5])   # 0.5m above camera
+        below = self.cam_pos + np.array([0, 0, -0.5])   # 0.5m below camera
+        # Shift slightly forward so both are in front of the camera
+        fwd = -self.cam_rot[2]  # camera looks along -Z
+        above = above + fwd * 2.0
+        below = below + fwd * 2.0
+
+        px, depths = self.project(np.array([above, below]))
+        assert depths[0] > 0 and depths[1] > 0, \
+            "Validation points are behind the camera — adjust test offset"
+        v_above, v_below = px[0, 1], px[1, 1]
+        assert v_above < v_below, (
+            f"Projection Y-axis appears flipped: point above camera projects to "
+            f"V={v_above:.0f} but point below projects to V={v_below:.0f}. "
+            f"'Above' should have smaller V (higher in image). "
+            f"Check that cam_rot[1] (Y-axis) points DOWN in image convention."
+        )
+
     def geom_name(self, geom_id: int) -> str:
         """Resolve a geom ID to a human-readable name.
 
