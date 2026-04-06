@@ -213,7 +213,25 @@ class ContactExtractor:
 
 
 class ContactProjector:
-    """Project 3D world contact points to 2D pixel coordinates using MuJoCo camera."""
+    """Project 3D world contact points to 2D pixel coordinates using MuJoCo camera.
+
+    Builds a pinhole camera model from either a named XML camera or free-camera
+    parameters.  Internally stores:
+
+        cam_pos  — (3,) camera position in world
+        cam_rot  — (3, 3) rotation matrix, rows = camera axes in IMAGE convention:
+                     row 0: X = right in image
+                     row 1: Y = DOWN in image  (not MuJoCo's native "up")
+                     row 2: Z = backward        (camera looks along -Z)
+        K        — (3, 3) intrinsic matrix  (fx, fy, cx, cy)
+
+    IMPORTANT — MuJoCo camera convention vs image convention:
+        MuJoCo defines camera Y as UP, but image pixel V increases DOWNWARD.
+        Both code paths negate the Y axis so that ``cam_rot[1]`` points DOWN.
+        If you ever change how cam_rot is built, verify with
+        ``_validate_projection()`` that known 3D points land in the right
+        quadrant of the image.
+    """
 
     def __init__(self, model: mujoco.MjModel, width: int = 640, height: int = 480,
                  camera_name: Optional[str] = None,
@@ -233,7 +251,10 @@ class ContactProjector:
                 raise ValueError(f"Camera '{camera_name}' not found in model")
             fovy_deg = model.cam_fovy[cam_id]
             self.cam_pos = model.cam_pos[cam_id].copy()
-            self.cam_rot = model.cam_mat0[cam_id].reshape(3, 3).copy()
+            # cam_mat0 columns are camera axes in world; transpose so rows = axes.
+            # Negate Y row: MuJoCo Y-axis points UP, image V increases DOWN.
+            self.cam_rot = model.cam_mat0[cam_id].reshape(3, 3).T.copy()
+            self.cam_rot[1] = -self.cam_rot[1]
         else:
             # Free camera — extract pose via MjvScene
             fovy_deg = fovy
@@ -254,7 +275,7 @@ class ContactProjector:
             self.cam_pos = np.array(scene.camera[0].pos, dtype=np.float64)
             fwd = np.array(scene.camera[0].forward, dtype=np.float64)
             up = np.array(scene.camera[0].up, dtype=np.float64)
-            # MuJoCo cam frame: x=right, y=down-in-image, looks along -z
+            # Negate up → cam_y points DOWN in image (same convention as named path)
             cam_z = -fwd
             cam_y = -up
             cam_x = np.cross(cam_y, cam_z)
