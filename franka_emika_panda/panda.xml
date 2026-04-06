@@ -208,6 +208,7 @@
                     <geom mesh="link7_6" material="black" class="visual"/>
                     <geom mesh="link7_7" material="white" class="visual"/>
                     <geom mesh="link7_c" class="collision"/>
+                    <!-- Wrist camera: mounted on link7, looks past hand toward workspace -->
                     <body name="hand" pos="0 0 0.107" quat="0.9238795 0 0 -0.3826834">
                       <inertial mass="0.73" pos="-0.01 0 0.03" diaginertia="0.001 0.0025 0.0017"/>
                       <geom mesh="hand_0" material="off_white" class="visual"/>
@@ -217,15 +218,25 @@
                       <geom mesh="hand_4" material="off_white" class="visual"/>
                       <geom mesh="hand_c" class="collision"/>
 
+                      <!-- Wrist camera: near fingertip level, outside mesh, looks along gripper approach (+Z) -->
+                      <!-- <camera name="ee_cam" pos="0 -0.04 0.09" xyaxes="1 0 0 0 -1 0" fovy="90"/>
+                      <geom name="ee_cam_body" type="box" size="0.020 0.012 0.008"
+                            pos="0 -0.04 0.09" rgba="1 0.3 0 1" class="visual"/>
+                      <geom name="ee_cam_lens" type="cylinder" size="0.007 0.010"
+                            pos="0 -0.04 0.09" xyaxes="1 0 0 0 -1 0" rgba="0 1 1 1" class="visual"/> -->
+
+                      <camera name="ee_cam" pos="0.0318 -0.0025 0.05" xyaxes="1 0 0 0 -1 0" fovy="90"/>
+                      <geom name="ee_cam_body" type="box" size="0.012 0.020 0.008"
+                            pos="0.0318 -0.0025 0.05" rgba="1 0.3 0 1" class="visual"/>
+                      <geom name="ee_cam_lens" type="cylinder" size="0.007 0.010"
+                            pos="0.0318 -0.0025 0.05" xyaxes="1 0 0 0 -1 0" rgba="0 1 1 1" class="visual"/>
+
                       <!-- ADD THIS SITE HERE -->
                       <site name="end_effector"
                             pos="0 0 0.1"
                             size="0.01"
-                            rgba="1 0 0 1"
+                            rgba="1 0 0 0"
                             type="sphere"/>
-
-                      <!-- EE-mounted camera: looks down along gripper axis -->
-                      <camera name="ee_cam" pos="0 0 0.1" xyaxes="1 0 0 0 1 0" fovy="90"/>
 
                       <body name="left_finger" pos="0 0 0.0584">
                         <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7"/>

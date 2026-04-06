@@ -273,7 +273,7 @@ def main():
     parser.add_argument("npz_file", help="Path to .npz experiment file")
     parser.add_argument("--scene-xml", required=True, help="Path to scene XML")
     parser.add_argument("--output-dir", default=".", help="Output directory")
-    parser.add_argument("--camera", default="overhead_cam")
+    parser.add_argument("--camera", default="front_cam")
     parser.add_argument("--no-image", action="store_true", help="Skip annotated image")
     args = parser.parse_args()
 

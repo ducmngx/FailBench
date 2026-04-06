@@ -81,7 +81,12 @@ class ExperimentRunner:
         # Load MuJoCo model
         self.model = mujoco.MjModel.from_xml_path(config.scene_xml_path)
         self.data = mujoco.MjData(self.model)
-        self.scene_name = os.path.splitext(os.path.basename(config.scene_xml_path))[0]
+        _xml_stem = os.path.splitext(os.path.basename(config.scene_xml_path))[0]
+        # If the XML is named generically (e.g. "scene.xml"), use the parent directory name
+        if _xml_stem == "scene":
+            self.scene_name = os.path.basename(os.path.dirname(config.scene_xml_path))
+        else:
+            self.scene_name = _xml_stem
 
         # Capture utilities
         self.renderer = OffscreenRenderer(

@@ -41,7 +41,8 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
-    <camera name="overhead_cam" pos="0.3856 -0.6119 1.3969" xyaxes="-0.5 -0.866 0 0.7849 -0.4532 -0.4226" fovy="60" mode="fixed"/>
+    <camera name="front_cam" pos="-0.7545 -1.5888 1.0762"
+            xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
 
 
     <!-- First Row -->

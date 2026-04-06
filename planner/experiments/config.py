@@ -52,7 +52,7 @@ class ExperimentConfig:
     # Capture params
     image_width: int = 640
     image_height: int = 480
-    camera_name: Optional[str] = "overhead_cam"
+    camera_name: Optional[str] = "front_cam"
     # Free camera fallback params (used if camera_name is None)
     camera_lookat: Optional[List[float]] = None
     camera_distance: Optional[float] = None

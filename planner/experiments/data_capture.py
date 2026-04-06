@@ -54,7 +54,7 @@ class OffscreenRenderer:
     """
 
     def __init__(self, model: mujoco.MjModel, height: int = 480, width: int = 640,
-                 camera_name: Optional[str] = "overhead_cam",
+                 camera_name: Optional[str] = "front_cam",
                  camera_lookat: Optional[List[float]] = None,
                  camera_distance: Optional[float] = None,
                  camera_azimuth: Optional[float] = None,
