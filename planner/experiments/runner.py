@@ -19,6 +19,7 @@ from planner.experiments.data_capture import (
     SimCheckpoint,
     SimStateCheckpoint,
 )
+from planner.utils.trajectory_interpolation import interpolate_trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -217,49 +218,128 @@ class ExperimentRunner:
 
     def _run_with_failure(self, phase_sequence, target_fail_phase, experiment_id) -> Optional[DataSample]:
         """Replay trajectory phases, injecting failure at the chosen point."""
+        if self.config.use_interpolation:
+            return self._run_with_failure_interpolated(
+                phase_sequence, target_fail_phase, experiment_id)
+        return self._run_with_failure_legacy(
+            phase_sequence, target_fail_phase, experiment_id)
+
+    # --- Legacy mode (sparse waypoints + settle) ---
+
+    def _run_with_failure_legacy(self, phase_sequence, target_fail_phase, experiment_id) -> Optional[DataSample]:
         config = self.config
-        settle_time = 200  # physics steps per waypoint
+        settle_time = 200
 
         for phase_id, phase_traj in phase_sequence:
-            # Move to start of this phase trajectory
             self.data.ctrl[:7] = phase_traj[0][:7]
             self._close_gripper_headless(target_force=5000.0)
             self._settle(settle_time)
 
-            # Pick failure step for this phase
             if phase_id == target_fail_phase:
                 if config.fail_step_offset is not None:
                     fail_at = min(config.fail_step_offset, len(phase_traj) - 1)
                 else:
                     fail_at = self._rng.randint(1, max(1, len(phase_traj) - 1))
 
-                # Execute up to failure point
                 for target_config in phase_traj[:fail_at]:
                     self.data.ctrl[:7] = target_config[:7]
                     self._close_gripper_headless(target_force=5000.0)
                     for _ in range(settle_time):
                         mujoco.mj_step(self.model, self.data)
 
-                # Capture and fork
                 return self._capture_and_fork(
                     fail_phase=phase_id,
                     fail_step=fail_at,
                     experiment_id=experiment_id,
                 )
             else:
-                # Execute full phase without failure
                 for target_config in phase_traj:
                     self.data.ctrl[:7] = target_config[:7]
                     self._close_gripper_headless(target_force=5000.0)
                     for _ in range(settle_time):
                         mujoco.mj_step(self.model, self.data)
 
-        # If we get here, the target phase wasn't in the sequence — use last phase
         last_phase_id, last_traj = phase_sequence[-1]
         fail_at = self._rng.randint(1, max(1, len(last_traj) - 1))
         return self._capture_and_fork(
             fail_phase=last_phase_id,
             fail_step=fail_at,
+            experiment_id=experiment_id,
+        )
+
+    # --- Interpolated mode (dense trajectory, mid-motion failure) ---
+
+    def _run_with_failure_interpolated(self, phase_sequence, target_fail_phase, experiment_id) -> Optional[DataSample]:
+        config = self.config
+        steps_per_point = config.steps_per_interp_point
+
+        # Record grip ctrl from setup phase — hold constant during replay
+        grip_ctrl = self.data.ctrl[7]
+
+        # Get joint limits from model for clamping
+        joint_limits = np.column_stack([
+            self.model.jnt_range[:7, 0],
+            self.model.jnt_range[:7, 1],
+        ])
+
+        for phase_id, phase_traj in phase_sequence:
+            dense_traj = interpolate_trajectory(
+                phase_traj,
+                num_points_per_segment=config.interp_points_per_segment,
+                method=config.interp_method,
+                joint_limits=joint_limits,
+            )
+            total_points = len(dense_traj)
+
+            if phase_id == target_fail_phase:
+                # Determine failure point index (in dense trajectory)
+                if config.fail_fraction is not None:
+                    frac = config.fail_fraction
+                else:
+                    frac = self._rng.choice(config.canonical_fail_fractions)
+                fail_at_point = int(frac * (total_points - 1))
+                fail_at_point = max(1, min(fail_at_point, total_points - 1))
+
+                # Execute trajectory up to failure point
+                for pt_idx in range(fail_at_point):
+                    self.data.ctrl[:7] = dense_traj[pt_idx]
+                    self.data.ctrl[7] = grip_ctrl
+                    for _ in range(steps_per_point):
+                        mujoco.mj_step(self.model, self.data)
+
+                # Set the failure-point target (let controller start tracking it)
+                self.data.ctrl[:7] = dense_traj[fail_at_point]
+                self.data.ctrl[7] = grip_ctrl
+                for _ in range(steps_per_point):
+                    mujoco.mj_step(self.model, self.data)
+
+                qvel_norm = np.linalg.norm(self.data.qvel[:7])
+                logger.info(
+                    "Failure at fraction=%.2f, point=%d/%d, |qvel|=%.4f rad/s",
+                    frac, fail_at_point, total_points, qvel_norm,
+                )
+                if qvel_norm < 0.01:
+                    logger.warning("Near-zero velocity at failure point")
+
+                return self._capture_and_fork(
+                    fail_phase=phase_id,
+                    fail_step=fail_at_point,
+                    experiment_id=experiment_id,
+                )
+            else:
+                # Execute full phase without failure
+                for pt_idx in range(total_points):
+                    self.data.ctrl[:7] = dense_traj[pt_idx]
+                    self.data.ctrl[7] = grip_ctrl
+                    for _ in range(steps_per_point):
+                        mujoco.mj_step(self.model, self.data)
+
+        # Fallback: use last phase
+        last_phase_id, _ = phase_sequence[-1]
+        frac = self._rng.choice(config.canonical_fail_fractions)
+        return self._capture_and_fork(
+            fail_phase=last_phase_id,
+            fail_step=0,
             experiment_id=experiment_id,
         )
 
@@ -280,13 +360,24 @@ class ExperimentRunner:
         # Save checkpoint for forking
         checkpoint = SimStateCheckpoint.save(self.data)
 
+        # --- Select failure modes ---
+        if config.failure_sample_mode == "sample":
+            weights = [fc.probability for fc in config.failure_configs]
+            selected_failures = self._rng.choices(
+                config.failure_configs,
+                weights=weights,
+                k=config.num_failure_samples,
+            )
+        else:
+            selected_failures = config.failure_configs
+
         # --- Run each failure mode ---
         failure_results: List[FailureResult] = []
         all_contacts: List[ContactPoint] = []
         all_geom_ids: set = set()
         post_rgb = None
 
-        for fc in config.failure_configs:
+        for fc in selected_failures:
             # Restore to pre-failure state
             SimStateCheckpoint.restore(self.model, self.data, checkpoint)
 

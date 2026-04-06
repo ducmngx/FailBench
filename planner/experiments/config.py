@@ -46,8 +46,21 @@ class ExperimentConfig:
 
     # Where along the trajectory to inject failure
     fail_phase: Optional[int] = None   # 6 or 7; None = random
-    fail_step_offset: Optional[int] = None  # step within phase; None = random
-    fail_duration: int = 40
+    fail_step_offset: Optional[int] = None  # legacy: waypoint index; None = random
+    fail_fraction: Optional[float] = None   # fraction [0,1] of phase; None = random from canonical set
+    canonical_fail_fractions: List[float] = field(
+        default_factory=lambda: [0.1, 0.25, 0.4, 0.55, 0.7, 0.85]
+    )
+
+    # Trajectory interpolation
+    use_interpolation: bool = False
+    interp_points_per_segment: int = 50
+    interp_method: str = "cubic"       # "cubic" or "linear"
+    steps_per_interp_point: int = 4    # sim steps per dense point
+
+    # Failure selection: "all" runs every mode, "sample" picks probabilistically
+    failure_sample_mode: str = "all"
+    num_failure_samples: int = 1
 
     # Capture params
     image_width: int = 640

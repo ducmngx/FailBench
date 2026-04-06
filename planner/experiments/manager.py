@@ -70,6 +70,9 @@ def save_sample_npz(sample: DataSample, path: str) -> None:
         "fail_phase": np.array([sample.fail_phase], dtype=np.int32),
         "fail_step": np.array([sample.fail_step], dtype=np.int32),
         "seed": np.array([sample.seed], dtype=np.int32),
+        "pre_qvel_norm": np.array(
+            [np.linalg.norm(sample.pre_failure_robot.qvel)], dtype=np.float64
+        ),
     }
 
     if sample.pre_failure_depth is not None:
@@ -108,6 +111,7 @@ def _manifest_row(sample: DataSample, npz_filename: str) -> dict:
         "num_failure_modes": len(sample.failure_results),
         "had_any_collision": any(fr.had_collision for fr in sample.failure_results),
         "impacted_geom_ids": ";".join(str(g) for g in sample.all_impacted_geom_ids),
+        "pre_qvel_norm": round(float(np.linalg.norm(sample.pre_failure_robot.qvel)), 4),
         "npz_file": npz_filename,
     }
 
@@ -115,7 +119,7 @@ def _manifest_row(sample: DataSample, npz_filename: str) -> dict:
 _MANIFEST_COLUMNS = [
     "experiment_id", "trajectory_file", "seed", "fail_phase", "fail_step",
     "num_contacts", "num_failure_modes", "had_any_collision",
-    "impacted_geom_ids", "npz_file",
+    "impacted_geom_ids", "pre_qvel_norm", "npz_file",
 ]
 
 
