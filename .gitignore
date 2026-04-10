@@ -1,4 +1,5 @@
 /archive
+CLAUDE.md
 
 __pycache__/
 .DS_STORE
@@ -8,3 +9,7 @@ MUJOCO_LOG.TXT
 
 .env
 .vscode/
+
+# External assets (cloned repos — download via external_assets/setup.sh)
+external_assets/vikashplus_*/
+external_assets/kevinzakka_*/

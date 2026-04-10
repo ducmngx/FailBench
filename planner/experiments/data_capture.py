@@ -132,9 +132,9 @@ class OffscreenRenderer:
 # ContactExtractor
 # ---------------------------------------------------------------------------
 
-# Geom IDs for all obstacle / object geoms on the table (from scene_level2.xml).
-# object3_geom = 86 is the grasped object.
-_OBJECT3_GEOM_ID = 86
+# Default grasped object geom ID — resolved dynamically per scene.
+# Legacy value 86 was specific to scene_level2.xml.
+_DEFAULT_GRASPED_GEOM_ID = -1
 
 # Robot body names — used to build the robot geom set via body membership
 # (robot geoms are unnamed in the Panda MJCF, so name-based detection doesn't work).
@@ -145,7 +145,7 @@ _ROBOT_BODY_NAMES = {"world", "link0", "link1", "link2", "link3", "link4",
 class ContactExtractor:
     """Extract 3D contact data from MuJoCo simulation state."""
 
-    def __init__(self, model: mujoco.MjModel, target_geom_id: int = _OBJECT3_GEOM_ID):
+    def __init__(self, model: mujoco.MjModel, target_geom_id: int = _DEFAULT_GRASPED_GEOM_ID):
         self.model = model
         self.target_geom_id = target_geom_id
 

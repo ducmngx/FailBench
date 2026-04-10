@@ -1,0 +1,183 @@
+<mujoco model="scene_cluttered">
+  <!--
+    Scene: Cluttered desk (custom white slab table)
+    Table surface z=0.760 m; near edge y=-0.200 (table body at y=-0.520)
+    Mesh objects: phone, mouse, toothbrush, stamp, camera, rubberduck, alarmclock (7 meshes)
+    Primitive obstacles: tape, eraser, smallbox, watch disc, coin (5 primitives)
+  -->
+  <size nconmax="800" njmax="3000"/>
+  <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
+          iterations="50" ls_iterations="15" noslip_tolerance="1e-6"/>
+  <option noslip_iterations="5"><flag multiccd="enable" gravity="enable"/></option>
+  <statistic center="0.0 -0.520 0.82" extent="1.1"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="white_table" rgba="0.92 0.92 0.92 1" shininess="0.3" reflectance="0.2"/>
+
+    <mesh name="phone"         file="phone.stl"/>
+    <mesh name="phone_c0"      file="phone_c0.stl"/>
+    <mesh name="phone_c1"      file="phone_c1.stl"/>
+    <mesh name="phone_c2"      file="phone_c2.stl"/>
+    <mesh name="mouse"         file="mouse.stl"/>
+    <mesh name="mouse_c0"      file="mouse_c0.stl"/>
+    <mesh name="toothbrush"    file="toothbrush.stl"/>
+    <mesh name="toothbrush_c0" file="toothbrush_c0.stl"/>
+    <mesh name="toothbrush_c1" file="toothbrush_c1.stl"/>
+    <mesh name="toothbrush_c2" file="toothbrush_c2.stl"/>
+    <mesh name="stamp"         file="stamp.stl"/>
+    <mesh name="stamp_c0"      file="stamp_c0.stl"/>
+    <mesh name="stamp_c1"      file="stamp_c1.stl"/>
+    <mesh name="stamp_c2"      file="stamp_c2.stl"/>
+    <mesh name="camera"        file="camera.stl"/>
+    <mesh name="camera_c0"     file="camera_c0.stl"/>
+    <mesh name="camera_c1"     file="camera_c1.stl"/>
+    <mesh name="rubberduck"    file="rubberduck.stl"/>
+    <mesh name="rubberduck_c0" file="rubberduck_c0.stl"/>
+    <mesh name="rubberduck_c1" file="rubberduck_c1.stl"/>
+    <mesh name="rubberduck_c2" file="rubberduck_c2.stl"/>
+    <mesh name="alarmclock"    file="alarmclock.stl"/>
+    <mesh name="alarmclock_c0" file="alarmclock_c0.stl"/>
+  </asset>
+
+  <default>
+    <default class="obj_col">
+      <geom type="mesh" contype="1" conaffinity="1" group="3"
+            friction="1 0.5 0.01" condim="4" density="1250" rgba=".3 .4 .5 0"/>
+    </default>
+    <default class="obj_viz">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+  </default>
+
+  <include file="../../franka_emika_panda/panda_elevated.xml"/>
+
+  <worldbody>
+    <light pos="0 0 2.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
+    <camera name="front_cam" pos="-0.65 -1.5 1.456"
+            xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
+
+    <!-- Custom white slab table: body y=-0.520, near edge y=-0.200 -->
+    <body name="cluttered_table" pos="0 -0.520 0">
+      <geom type="box" size="0.50 0.32 0.040" pos="0 0 0.720" material="white_table"
+            mass="35" contype="1" conaffinity="1"/>
+      <geom type="box" size="0.48 0.30 0.015" pos="0 0 0.665" rgba="0.85 0.85 0.85 1"/>
+      <geom type="box" size="0.020 0.020 0.330" pos="-0.460  0.280 0.330" rgba="0.75 0.75 0.75 1"/>
+      <geom type="box" size="0.020 0.020 0.330" pos="-0.460 -0.280 0.330" rgba="0.75 0.75 0.75 1"/>
+      <geom type="box" size="0.020 0.020 0.330" pos=" 0.460  0.280 0.330" rgba="0.75 0.75 0.75 1"/>
+      <geom type="box" size="0.020 0.020 0.330" pos=" 0.460 -0.280 0.330" rgba="0.75 0.75 0.75 1"/>
+    </body>
+
+    <!-- object3: slim green stick (pen-like), 0.018 m cross-section → fits 4 cm gripper -->
+    <body name="object3" pos="0.01 -0.390 0.785">
+      <joint name="object3_joint" type="free"/>
+      <geom name="object3_geom" type="box" size="0.018 0.018 0.040"
+            rgba="0.10 0.60 0.40 1" solimp="0.015 1 0.02" solref="0.005 1"
+            condim="6" friction="2.5 1.0 0.01"/>
+    </body>
+
+    <!-- smartphone (dark, lying flat) -->
+    <body name="obstacle_phone" pos="-0.10 -0.360 0.782">
+      <joint name="obstacle_phone_joint" type="free"/>
+      <geom class="obj_viz" mesh="phone" rgba="0.12 0.12 0.14 1"/>
+      <geom class="obj_col" mesh="phone_c0"/>
+      <geom class="obj_col" mesh="phone_c1"/>
+      <geom class="obj_col" mesh="phone_c2"/>
+    </body>
+
+    <!-- computer mouse (dark gray) -->
+    <body name="obstacle_mouse" pos="0.15 -0.380 0.778">
+      <joint name="obstacle_mouse_joint" type="free"/>
+      <geom class="obj_viz" mesh="mouse" rgba="0.18 0.18 0.20 1"/>
+      <geom type="ellipsoid" size=".020 .017 .009" pos="-.0245 0 -.001"
+            rgba="0.4 0.4 0.4 1" euler="1.57 0 0" contype="0" conaffinity="0" group="2"/>
+      <geom class="obj_col" mesh="mouse_c0" condim="4"/>
+    </body>
+
+    <!-- toothbrush (blue, long handle) -->
+    <body name="obstacle_toothbrush" pos="-0.18 -0.480 0.775">
+      <joint name="obstacle_toothbrush_joint" type="free"/>
+      <geom class="obj_viz" mesh="toothbrush" rgba="0.10 0.38 0.75 1"/>
+      <geom type="box" size=".0135 .007 .0047" pos="-.063 -.004 0" euler="0 0 0.1"
+            contype="0" conaffinity="0" group="2"/>
+      <geom class="obj_col" mesh="toothbrush_c0" condim="4"/>
+      <geom class="obj_col" mesh="toothbrush_c1" condim="4"/>
+      <geom class="obj_col" mesh="toothbrush_c2" condim="4"/>
+    </body>
+
+    <!-- rubber stamp (black body + red ink pad) -->
+    <body name="obstacle_stamp" pos="0.12 -0.560 0.783">
+      <joint name="obstacle_stamp_joint" type="free"/>
+      <geom class="obj_viz" mesh="stamp" rgba="0.10 0.10 0.12 1"/>
+      <geom type="box" size=".051 .026 .007" pos="0 0 -.031"
+            rgba=".65 .08 .08 1" contype="0" conaffinity="0" group="2"/>
+      <geom class="obj_col" mesh="stamp_c0" condim="4"/>
+      <geom class="obj_col" mesh="stamp_c1" condim="4"/>
+      <geom class="obj_col" mesh="stamp_c2" condim="4"/>
+    </body>
+
+    <!-- camera (DSLR style, black) -->
+    <body name="obstacle_camera" pos="-0.05 -0.600 0.790">
+      <joint name="obstacle_camera_joint" type="free"/>
+      <geom class="obj_viz" mesh="camera" rgba="0.10 0.10 0.12 1"/>
+      <geom class="obj_col" mesh="camera_c0"/>
+      <geom class="obj_col" mesh="camera_c1"/>
+    </body>
+
+    <!-- rubber duck (yellow, fun item) -->
+    <body name="obstacle_rubberduck" pos="0.20 -0.540 0.795">
+      <joint name="obstacle_rubberduck_joint" type="free"/>
+      <geom class="obj_viz" mesh="rubberduck" rgba="0.98 0.88 0.04 1"/>
+      <geom class="obj_col" mesh="rubberduck_c0"/>
+      <geom class="obj_col" mesh="rubberduck_c1"/>
+      <geom class="obj_col" mesh="rubberduck_c2"/>
+    </body>
+
+    <!-- alarm clock (dark green, upright) -->
+    <body name="obstacle_alarmclock" pos="-0.20 -0.380 0.810">
+      <joint name="obstacle_alarmclock_joint" type="free"/>
+      <geom class="obj_viz" mesh="alarmclock" rgba="0.15 0.25 0.20 1"/>
+      <geom type="cylinder" size=".040 0.002" rgba=".7 .7 .74 1" pos="0 -.015 -.01"
+            euler="1.57 0 0" contype="0" conaffinity="0" group="2"/>
+      <geom class="obj_col" mesh="alarmclock_c0"/>
+    </body>
+
+    <!-- tape roll (light blue cylinder) -->
+    <body name="obstacle_tape" pos="0.07 -0.430 0.788">
+      <joint name="obstacle_tape_joint" type="free"/>
+      <geom name="obstacle_tape_geom" type="cylinder" size="0.040 0.028"
+            rgba="0.30 0.70 0.90 1" condim="3"/>
+    </body>
+
+    <!-- eraser (pink box) -->
+    <body name="obstacle_eraser" pos="-0.08 -0.660 0.780">
+      <joint name="obstacle_eraser_joint" type="free"/>
+      <geom name="obstacle_eraser_geom" type="box" size="0.030 0.020 0.020"
+            rgba="0.90 0.60 0.60 1" condim="3"/>
+    </body>
+
+    <!-- small box (red cube) -->
+    <body name="obstacle_smallbox" pos="0.18 -0.660 0.790">
+      <joint name="obstacle_smallbox_joint" type="free"/>
+      <geom name="obstacle_smallbox_geom" type="box" size="0.030 0.030 0.030"
+            rgba="0.80 0.30 0.30 1" condim="3"/>
+    </body>
+
+    <!-- coin (thin gold disc) -->
+    <body name="obstacle_coin" pos="-0.16 -0.640 0.763">
+      <joint name="obstacle_coin_joint" type="free"/>
+      <geom name="obstacle_coin_geom" type="cylinder" size="0.014 0.003"
+            rgba="0.75 0.70 0.30 1" condim="3"/>
+    </body>
+
+  </worldbody>
+</mujoco>

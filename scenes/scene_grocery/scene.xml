@@ -1,0 +1,137 @@
+<mujoco model="scene_grocery">
+  <!--
+    Scene: Grocery counter (studyTable rotated 180° — shelf faces away)
+    Table surface z=0.760 m; near edge y=-0.200 (table body at y=-0.475, euler z=pi)
+    Mesh objects: 8 YCB grocery objects (mustard, soup, crackers, sugar,
+                  gelatin, master-chef-can, tuna-can, potted-meat-can)
+    Grasped object3: slim yellow box (cracker-box style, thin dimension graspable)
+  -->
+  <size nconmax="500" njmax="2000"/>
+  <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
+          iterations="30" ls_iterations="10" noslip_tolerance="1e-6"/>
+  <option noslip_iterations="3"><flag multiccd="enable" gravity="enable"/></option>
+  <statistic center="0.0 -0.475 0.86" extent="1.1"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="study_wood" rgba="0.78 0.88 0.68 1" shininess="0.2" reflectance="0.1"/>
+
+    <!-- YCB meshes (.msh format, single mesh used for both viz and col) -->
+    <mesh name="ycb_mustard"   file="006_mustard_bottle.msh"/>
+    <mesh name="ycb_soup"      file="005_tomato_soup_can.msh"/>
+    <mesh name="ycb_crackers"  file="003_cracker_box.msh"/>
+    <mesh name="ycb_sugar"     file="004_sugar_box.msh"/>
+    <mesh name="ycb_gelatin"   file="009_gelatin_box.msh"/>
+    <mesh name="ycb_chefcan"   file="002_master_chef_can.msh"/>
+    <mesh name="ycb_tunacan"   file="007_tuna_fish_can.msh"/>
+    <mesh name="ycb_meatcan"   file="010_potted_meat_can.msh"/>
+  </asset>
+
+  <!-- YCB physics defaults -->
+  <default>
+    <default class="ycb_col">
+      <geom contype="1" conaffinity="1" group="3" rgba=".4 .5 .6 1"/>
+    </default>
+    <default class="ycb_viz">
+      <geom contype="0" conaffinity="0" type="mesh" mass="0"/>
+    </default>
+  </default>
+
+  <include file="../../franka_emika_panda/panda_elevated.xml"/>
+
+  <worldbody>
+    <light pos="0 0 2.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
+    <camera name="front_cam" pos="-0.65 -1.45 1.456"
+            xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
+
+    <!-- studyTable: rotated 180° so shelf faces away, near edge y=-0.200 -->
+    <body name="grocery_table" pos="0 -0.475 0" euler="0 0 3.14159">
+      <geom type="box" size="0.60 0.275 0.025" pos="0 0 0.735" material="study_wood"
+            mass="40" contype="1" conaffinity="1"/>
+      <geom type="box" size="0.17 0.260 0.050" pos=" 0.42 0 0.660" material="study_wood"/>
+      <geom type="box" size="0.17 0.260 0.050" pos="-0.42 0 0.660" material="study_wood"/>
+      <geom type="box" size="0.025 0.025 0.305" pos="-0.565  0.235 0.305" material="study_wood"/>
+      <geom type="box" size="0.025 0.025 0.305" pos="-0.565 -0.235 0.305" material="study_wood"/>
+      <geom type="box" size="0.025 0.025 0.305" pos=" 0.565  0.235 0.305" material="study_wood"/>
+      <geom type="box" size="0.025 0.025 0.305" pos=" 0.565 -0.235 0.305" material="study_wood"/>
+      <!-- Back shelf (local +y → world -y after rotation → faces away from robot) -->
+      <geom type="box" size="0.600 0.010 0.175" pos="0 0.265 0.935" material="study_wood"/>
+      <geom type="box" size="0.600 0.110 0.010" pos="0 0.165 1.100" material="study_wood"
+            contype="1" conaffinity="1"/>
+    </body>
+
+    <!-- object3: slim box (cracker-box style, yellow), 0.022 m thin → fits 4 cm gripper -->
+    <body name="object3" pos="0.02 -0.375 0.790">
+      <joint name="object3_joint" type="free"/>
+      <geom name="object3_geom" type="box" size="0.022 0.030 0.022"
+            rgba="0.90 0.65 0.10 1" solimp="0.015 1 0.02" solref="0.005 1"
+            condim="6" friction="2.5 1.0 0.01"/>
+    </body>
+
+    <!-- mustard bottle (yellow, tall ~19 cm, YCB 006) -->
+    <body name="obstacle_mustard" pos="-0.18 -0.330 0.860">
+      <joint name="obstacle_mustard_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_mustard" rgba="0.96 0.82 0.06 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_mustard" mass="0.431"/>
+    </body>
+
+    <!-- tomato soup can (red, ~10 cm, YCB 005) -->
+    <body name="obstacle_soup" pos="-0.04 -0.340 0.815">
+      <joint name="obstacle_soup_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_soup" rgba="0.85 0.12 0.08 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_soup" mass="0.349"/>
+    </body>
+
+    <!-- cracker box (tan/brown, tall ~21 cm, YCB 003) -->
+    <body name="obstacle_crackers" pos="0.14 -0.320 0.870">
+      <joint name="obstacle_crackers_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_crackers" rgba="0.82 0.65 0.30 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_crackers" mass="0.411"/>
+    </body>
+
+    <!-- sugar box (white, tall ~18 cm, YCB 004) -->
+    <body name="obstacle_sugar" pos="-0.20 -0.520 0.855">
+      <joint name="obstacle_sugar_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_sugar" rgba="0.96 0.96 0.94 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_sugar" mass="0.514"/>
+    </body>
+
+    <!-- gelatin box (pink/red, small ~8 cm, YCB 009) -->
+    <body name="obstacle_gelatin" pos="0.08 -0.570 0.810">
+      <joint name="obstacle_gelatin_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_gelatin" rgba="0.90 0.30 0.55 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_gelatin" mass="0.097"/>
+    </body>
+
+    <!-- master chef can (dark blue/navy, tall ~14 cm, YCB 002) -->
+    <body name="obstacle_chefcan" pos="0.20 -0.460 0.840">
+      <joint name="obstacle_chefcan_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_chefcan" rgba="0.10 0.15 0.45 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_chefcan" mass="0.414"/>
+    </body>
+
+    <!-- tuna fish can (silver, very flat ~3 cm, YCB 007) -->
+    <body name="obstacle_tunacan" pos="-0.08 -0.620 0.775">
+      <joint name="obstacle_tunacan_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_tunacan" rgba="0.75 0.75 0.78 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_tunacan" mass="0.171"/>
+    </body>
+
+    <!-- potted meat can (pink label style, small ~8 cm, YCB 010) -->
+    <body name="obstacle_meatcan" pos="0.18 -0.640 0.810">
+      <joint name="obstacle_meatcan_joint" type="free"/>
+      <geom class="ycb_viz" mesh="ycb_meatcan" rgba="0.72 0.50 0.42 1"/>
+      <geom class="ycb_col" type="mesh" mesh="ycb_meatcan" mass="0.370"/>
+    </body>
+
+  </worldbody>
+</mujoco>

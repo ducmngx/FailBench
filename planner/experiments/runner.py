@@ -42,9 +42,10 @@ class DataSample:
     """Full output of one experiment trial."""
     experiment_id: str
     trajectory_file: str
+    task_id: str
+    traj_id: int
     seed: int
-    fail_phase: int
-    fail_step: int
+    traj_progress: float       # fraction [0, 1] of trajectory at which failure was injected
     sim_time_at_failure: float
 
     # Pre-failure state (shared across all failure modes)
@@ -108,13 +109,17 @@ class ExperimentRunner:
         from failure_injection.agressive_injector import AggressiveFailureInjector
         self.injector = AggressiveFailureInjector(self.model, self.data)
 
-        # Trajectory manager
-        from planner.utils.traj_saver import ExperimentTrajectoryManager
-        self.traj_manager = ExperimentTrajectoryManager()
+        # Store initial grasped object position for reset
+        self._grasped_obj_name = config.grasped_object_name
+        obj_pos = self._get_body_pos(self._grasped_obj_name)
+        self._grasped_obj_init_qpos = np.append(obj_pos.copy(), [0, 0, 0, 1])
 
-        # Store initial object3 position for reset
-        obj_pos = self._get_body_pos("object3")
-        self._object3_init_qpos = np.append(obj_pos.copy(), [0, 0, 0, 1])
+        # Resolve grasped object geom ID dynamically (not hardcoded)
+        geom_name = f"{self._grasped_obj_name}_geom"
+        self._grasped_obj_geom_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_name)
+        if self._grasped_obj_geom_id < 0:
+            logger.warning("Grasped object geom '%s' not found in model", geom_name)
 
         # RNG
         self._rng = random.Random(config.seed)
@@ -125,44 +130,29 @@ class ExperimentRunner:
 
     def run(self) -> Optional[DataSample]:
         """Execute the full trial and return collected data."""
+        import pickle
         config = self.config
         experiment_id = config.experiment_id or f"exp_{config.seed}"
 
-        # Load trajectory
-        self.traj_manager.load_from_file(config.trajectory_file)
-        scene_trajs = self.traj_manager.trajectories[self.scene_name]
+        with open(config.trajectory_file, "rb") as f:
+            traj_data = pickle.load(f)
+        scene_traj = traj_data[self.scene_name]
 
-        if "baseline" in config.trajectory_file:
-            saved_trajectories = {"phase7": scene_trajs["baseline"]["trajectory"]}
-            has_phase6 = False
-        else:
-            saved_trajectories = {
-                "phase6": scene_trajs["phase6"]["trajectory"],
-                "phase7": scene_trajs["phase7"]["trajectory"],
-            }
-            has_phase6 = True
+        # Segmented format: {"segments": [{"name", "trajectory", "action_after"}, ...]}
+        if "segments" in scene_traj:
+            segments = scene_traj["segments"]
+            # Reset robot to home — full mission starts from home config
+            self._reset_robot()
+            self._reset_grasped_object()
+            # Open gripper for approach phase
+            self._open_gripper_headless()
+            return self._run_segmented(segments, experiment_id)
 
-        # Get the first waypoint of the first saved trajectory
-        first_phase = "phase6" if has_phase6 else "phase7"
-        first_config = saved_trajectories[first_phase][0]
-
-        # Reset scene and set robot to the trajectory start with object grasped
-        self._reset_object3()
-        self._setup_grasped_state(first_config)
-
-        # Decide failure phase
-        if config.fail_phase is not None:
-            fail_phase = config.fail_phase
-        else:
-            fail_phase = self._rng.choices([6, 7], weights=[0.3, 0.7], k=1)[0]
-
-        # Collect phase trajectories in order
-        phase_sequence = []
-        if has_phase6:
-            phase_sequence.append((6, saved_trajectories["phase6"]))
-        phase_sequence.append((7, saved_trajectories["phase7"]))
-
-        return self._run_with_failure(phase_sequence, fail_phase, experiment_id)
+        # Legacy flat format: {"trajectory": [...]}
+        trajectory = scene_traj["trajectory"]
+        self._reset_grasped_object()
+        self._setup_grasped_state(trajectory[0])
+        return self._run_with_failure(trajectory, experiment_id)
 
     def close(self):
         self.renderer.close()
@@ -172,11 +162,11 @@ class ExperimentRunner:
     # ------------------------------------------------------------------
 
     def _setup_grasped_state(self, start_config: np.ndarray):
-        """Set robot to the start config of the saved trajectory and grasp object3.
+        """Set robot to the start config and grasp the target object.
 
         The saved trajectories assume the robot is already holding the object at
-        transport height. We set the joint positions directly, move object3 to be
-        between the gripper fingers, close the gripper, and let physics settle.
+        transport height. We set the joint positions directly, move the grasped
+        object to be between the gripper fingers, close the gripper, and settle.
         """
         n = min(len(start_config), 7)
 
@@ -189,14 +179,13 @@ class ExperimentRunner:
         self.data.ctrl[7] = 50.0  # partially closed
         mujoco.mj_forward(self.model, self.data)
 
-        # Move object3 to the end-effector position
+        # Move grasped object to the end-effector position
         ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "end_effector")
         ee_pos = self.data.site_xpos[ee_site_id].copy()
 
-        bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "object3")
+        bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, self._grasped_obj_name)
         jid = self.model.body_jntadr[bid]
         qpos_adr = self.model.jnt_qposadr[jid]
-        # Place object3 at EE position, slightly below
         obj_pos = ee_pos.copy()
         obj_pos[2] -= 0.02  # offset below EE
         self.data.qpos[qpos_adr:qpos_adr + 3] = obj_pos
@@ -213,137 +202,134 @@ class ExperimentRunner:
         self._settle(500)
 
     # ------------------------------------------------------------------
-    # Failure phase: multi-failure fork-and-collect
+    # Trajectory execution with failure injection
     # ------------------------------------------------------------------
 
-    def _run_with_failure(self, phase_sequence, target_fail_phase, experiment_id) -> Optional[DataSample]:
-        """Replay trajectory phases, injecting failure at the chosen point."""
-        if self.config.use_interpolation:
-            return self._run_with_failure_interpolated(
-                phase_sequence, target_fail_phase, experiment_id)
-        return self._run_with_failure_legacy(
-            phase_sequence, target_fail_phase, experiment_id)
-
-    # --- Legacy mode (sparse waypoints + settle) ---
-
-    def _run_with_failure_legacy(self, phase_sequence, target_fail_phase, experiment_id) -> Optional[DataSample]:
+    def _run_with_failure(self, trajectory: list, experiment_id: str) -> Optional[DataSample]:
+        """Interpolate trajectory, inject failure at chosen fraction, fork and collect."""
         config = self.config
-        settle_time = 200
 
-        for phase_id, phase_traj in phase_sequence:
-            self.data.ctrl[:7] = phase_traj[0][:7]
-            self._close_gripper_headless(target_force=5000.0)
-            self._settle(settle_time)
-
-            if phase_id == target_fail_phase:
-                if config.fail_step_offset is not None:
-                    fail_at = min(config.fail_step_offset, len(phase_traj) - 1)
-                else:
-                    fail_at = self._rng.randint(1, max(1, len(phase_traj) - 1))
-
-                for target_config in phase_traj[:fail_at]:
-                    self.data.ctrl[:7] = target_config[:7]
-                    self._close_gripper_headless(target_force=5000.0)
-                    for _ in range(settle_time):
-                        mujoco.mj_step(self.model, self.data)
-
-                return self._capture_and_fork(
-                    fail_phase=phase_id,
-                    fail_step=fail_at,
-                    experiment_id=experiment_id,
-                )
-            else:
-                for target_config in phase_traj:
-                    self.data.ctrl[:7] = target_config[:7]
-                    self._close_gripper_headless(target_force=5000.0)
-                    for _ in range(settle_time):
-                        mujoco.mj_step(self.model, self.data)
-
-        last_phase_id, last_traj = phase_sequence[-1]
-        fail_at = self._rng.randint(1, max(1, len(last_traj) - 1))
-        return self._capture_and_fork(
-            fail_phase=last_phase_id,
-            fail_step=fail_at,
-            experiment_id=experiment_id,
-        )
-
-    # --- Interpolated mode (dense trajectory, mid-motion failure) ---
-
-    def _run_with_failure_interpolated(self, phase_sequence, target_fail_phase, experiment_id) -> Optional[DataSample]:
-        config = self.config
-        steps_per_point = config.steps_per_interp_point
-
-        # Record grip ctrl from setup phase — hold constant during replay
         grip_ctrl = self.data.ctrl[7]
 
-        # Get joint limits from model for clamping
+        joint_limits = np.column_stack([
+            self.model.jnt_range[:7, 0],
+            self.model.jnt_range[:7, 1],
+        ])
+        dense_traj = interpolate_trajectory(
+            trajectory,
+            num_points_per_segment=config.interp_points_per_segment,
+            method=config.interp_method,
+            joint_limits=joint_limits,
+        )
+        total_points = len(dense_traj)
+
+        # Choose failure fraction
+        if config.fail_fraction is not None:
+            frac = config.fail_fraction
+        else:
+            frac = self._rng.choice(config.canonical_fail_fractions)
+
+        fail_at_point = max(1, min(int(frac * (total_points - 1)), total_points - 1))
+
+        # Execute trajectory up to failure point
+        for pt_idx in range(fail_at_point):
+            self.data.ctrl[:7] = dense_traj[pt_idx]
+            self.data.ctrl[7] = grip_ctrl
+            for _ in range(config.steps_per_interp_point):
+                mujoco.mj_step(self.model, self.data)
+
+        # Advance one more step at the failure target
+        self.data.ctrl[:7] = dense_traj[fail_at_point]
+        self.data.ctrl[7] = grip_ctrl
+        for _ in range(config.steps_per_interp_point):
+            mujoco.mj_step(self.model, self.data)
+
+        qvel_norm = np.linalg.norm(self.data.qvel[:7])
+        logger.info(
+            "Failure at fraction=%.2f, point=%d/%d, |qvel|=%.4f rad/s",
+            frac, fail_at_point, total_points, qvel_norm,
+        )
+
+        return self._capture_and_fork(traj_progress=frac, experiment_id=experiment_id)
+
+    # ------------------------------------------------------------------
+    # Segmented trajectory execution (full pick-and-place mission)
+    # ------------------------------------------------------------------
+
+    def _run_segmented(self, segments: list, experiment_id: str) -> Optional[DataSample]:
+        """Replay segmented trajectory with grasp/release actions, inject failure."""
+        config = self.config
+
         joint_limits = np.column_stack([
             self.model.jnt_range[:7, 0],
             self.model.jnt_range[:7, 1],
         ])
 
-        for phase_id, phase_traj in phase_sequence:
-            dense_traj = interpolate_trajectory(
-                phase_traj,
+        # Interpolate all segments and compute total point count
+        dense_segments = []
+        total_points = 0
+        for seg in segments:
+            dense = interpolate_trajectory(
+                seg["trajectory"],
                 num_points_per_segment=config.interp_points_per_segment,
                 method=config.interp_method,
                 joint_limits=joint_limits,
             )
-            total_points = len(dense_traj)
+            dense_segments.append({
+                "name": seg["name"],
+                "dense": dense,
+                "action_after": seg.get("action_after"),
+                "start_idx": total_points,
+            })
+            total_points += len(dense)
 
-            if phase_id == target_fail_phase:
-                # Determine failure point index (in dense trajectory)
-                if config.fail_fraction is not None:
-                    frac = config.fail_fraction
-                else:
-                    frac = self._rng.choice(config.canonical_fail_fractions)
-                fail_at_point = int(frac * (total_points - 1))
-                fail_at_point = max(1, min(fail_at_point, total_points - 1))
+        # Choose failure point
+        if config.fail_fraction is not None:
+            frac = config.fail_fraction
+        else:
+            frac = self._rng.choice(config.canonical_fail_fractions)
+        fail_at = max(1, min(int(frac * (total_points - 1)), total_points - 1))
 
-                # Execute trajectory up to failure point
-                for pt_idx in range(fail_at_point):
-                    self.data.ctrl[:7] = dense_traj[pt_idx]
-                    self.data.ctrl[7] = grip_ctrl
-                    for _ in range(steps_per_point):
-                        mujoco.mj_step(self.model, self.data)
+        # Replay segments
+        grip_ctrl = self.data.ctrl[7]  # starts open
+        global_idx = 0
 
-                # Set the failure-point target (let controller start tracking it)
-                self.data.ctrl[:7] = dense_traj[fail_at_point]
+        for seg_info in dense_segments:
+            dense = seg_info["dense"]
+            seg_name = seg_info["name"]
+
+            for pt in dense:
+                self.data.ctrl[:7] = pt
                 self.data.ctrl[7] = grip_ctrl
-                for _ in range(steps_per_point):
+                for _ in range(config.steps_per_interp_point):
                     mujoco.mj_step(self.model, self.data)
 
-                qvel_norm = np.linalg.norm(self.data.qvel[:7])
-                logger.info(
-                    "Failure at fraction=%.2f, point=%d/%d, |qvel|=%.4f rad/s",
-                    frac, fail_at_point, total_points, qvel_norm,
-                )
-                if qvel_norm < 0.01:
-                    logger.warning("Near-zero velocity at failure point")
+                if global_idx == fail_at:
+                    logger.info(
+                        "Failure at fraction=%.2f, point=%d/%d, segment='%s'",
+                        frac, global_idx, total_points, seg_name,
+                    )
+                    return self._capture_and_fork(
+                        traj_progress=frac, experiment_id=experiment_id)
+                global_idx += 1
 
-                return self._capture_and_fork(
-                    fail_phase=phase_id,
-                    fail_step=fail_at_point,
-                    experiment_id=experiment_id,
-                )
-            else:
-                # Execute full phase without failure
-                for pt_idx in range(total_points):
-                    self.data.ctrl[:7] = dense_traj[pt_idx]
-                    self.data.ctrl[7] = grip_ctrl
-                    for _ in range(steps_per_point):
-                        mujoco.mj_step(self.model, self.data)
+            # Segment boundary actions
+            action = seg_info["action_after"]
+            if action == "grasp":
+                self._close_gripper_headless(target_force=5000.0)
+                grip_ctrl = self.data.ctrl[7]
+                self._settle(200)
+            elif action == "release":
+                self._open_gripper_headless()
+                grip_ctrl = self.data.ctrl[7]
+                self._settle(200)
 
-        # Fallback: use last phase
-        last_phase_id, _ = phase_sequence[-1]
-        frac = self._rng.choice(config.canonical_fail_fractions)
+        # Fallback: failure at end of last segment
+        logger.warning("Reached end of trajectory without failure injection")
         return self._capture_and_fork(
-            fail_phase=last_phase_id,
-            fail_step=0,
-            experiment_id=experiment_id,
-        )
+            traj_progress=1.0, experiment_id=experiment_id)
 
-    def _capture_and_fork(self, fail_phase, fail_step, experiment_id) -> DataSample:
+    def _capture_and_fork(self, traj_progress: float, experiment_id: str) -> DataSample:
         """Capture pre-failure state, then fork for each failure mode."""
         config = self.config
 
@@ -392,12 +378,13 @@ class ExperimentRunner:
                     self.model, self.data, filter_target=False, min_force=1.0)
                 contacts.extend(step_contacts)
 
-            # Unique impacted geom IDs (excluding object3 itself)
+            # Unique impacted geom IDs (excluding the grasped object itself)
             impacted = set()
             for c in contacts:
                 impacted.add(c.geom1)
                 impacted.add(c.geom2)
-            impacted.discard(86)  # object3_geom
+            if self._grasped_obj_geom_id >= 0:
+                impacted.discard(self._grasped_obj_geom_id)
             impacted_list = sorted(impacted)
 
             failure_results.append(FailureResult(
@@ -419,9 +406,10 @@ class ExperimentRunner:
         return DataSample(
             experiment_id=experiment_id,
             trajectory_file=config.trajectory_file,
+            task_id=config.task_id,
+            traj_id=config.traj_id,
             seed=config.seed,
-            fail_phase=fail_phase,
-            fail_step=fail_step,
+            traj_progress=traj_progress,
             sim_time_at_failure=sim_time,
             pre_failure_rgb=pre_rgb,
             pre_failure_depth=pre_depth,
@@ -472,7 +460,8 @@ class ExperimentRunner:
             self.data.ctrl[7] = target_control
             mujoco.mj_step(self.model, self.data)
 
-            # Check force on object3
+            # Check force on grasped object
+            obj_name_lower = self._grasped_obj_name.lower()
             max_force = 0.0
             in_contact = False
             for i in range(self.data.ncon):
@@ -482,7 +471,7 @@ class ExperimentRunner:
                 if g1_name and g2_name:
                     pair = (g1_name.lower(), g2_name.lower())
                     finger_obj = any(
-                        ("finger" in a or "pad" in a) and "object3" in b
+                        ("finger" in a or "pad" in a) and obj_name_lower in b
                         for a, b in [pair, pair[::-1]]
                     )
                     if finger_obj:
@@ -513,11 +502,11 @@ class ExperimentRunner:
         mujoco.mj_forward(self.model, self.data)
         return self.data.xpos[body_id].copy()
 
-    def _reset_object3(self):
-        bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "object3")
+    def _reset_grasped_object(self):
+        bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, self._grasped_obj_name)
         jid = self.model.body_jntadr[bid]
         qpos_adr = self.model.jnt_qposadr[jid]
-        self.data.qpos[qpos_adr : qpos_adr + 7] = self._object3_init_qpos
+        self.data.qpos[qpos_adr : qpos_adr + 7] = self._grasped_obj_init_qpos
         mujoco.mj_forward(self.model, self.data)
 
     def _reset_robot(self):

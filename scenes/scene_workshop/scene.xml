@@ -1,0 +1,135 @@
+<mujoco model="scene_workshop">
+  <!--
+    Scene: Workshop table (ventionTable — blue aluminium extrusion frame)
+    Table surface z=0.824 m; near edge y=-0.201 (table body at y=-0.610)
+    Mesh objects: hammer, flashlight, stapler
+    Primitive obstacles: wrench (box), bolt (cylinder), pliers (box)
+  -->
+  <size nconmax="600" njmax="2500"/>
+  <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
+          iterations="30" ls_iterations="10" noslip_tolerance="1e-6"/>
+  <option noslip_iterations="3"><flag multiccd="enable" gravity="enable"/></option>
+  <statistic center="0.0 -0.610 0.88" extent="1.2"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="vention_blue"  rgba="0.14 0.30 0.52 1" shininess="0.1" reflectance="0.5"/>
+    <material name="vention_black" rgba="0.06 0.06 0.10 1" shininess="0.5" reflectance="0.8"/>
+
+    <mesh name="hammer_head" file="hammer_head.stl"/>
+    <mesh name="hammer_neck" file="hammer_neck.stl"/>
+    <mesh name="hammer_c0"   file="hammer_c0.stl"/>
+    <mesh name="hammer_c1"   file="hammer_c1.stl"/>
+    <mesh name="flashlight"  file="flashlight.stl"/>
+    <mesh name="flashlight_c0" file="flashlight_c0.stl"/>
+    <mesh name="flashlight_c1" file="flashlight_c1.stl"/>
+    <mesh name="stapler"     file="stapler.stl"/>
+    <mesh name="stapler_c0"  file="stapler_c0.stl"/>
+    <mesh name="stapler_c1"  file="stapler_c1.stl"/>
+    <mesh name="stapler_c2"  file="stapler_c2.stl"/>
+    <mesh name="stapler_c3"  file="stapler_c3.stl"/>
+    <mesh name="stapler_c4"  file="stapler_c4.stl"/>
+  </asset>
+
+  <default>
+    <default class="obj_col">
+      <geom type="mesh" contype="1" conaffinity="1" group="3"
+            friction="1 0.5 0.01" condim="4" density="1250" rgba=".3 .4 .5 0"/>
+    </default>
+    <default class="obj_viz">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+  </default>
+
+  <include file="../../franka_emika_panda/panda_elevated.xml"/>
+
+  <worldbody>
+    <light pos="0 0 2.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
+    <camera name="front_cam" pos="-0.65 -1.6 1.52"
+            xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
+
+    <!-- ventionTable: body y=-0.610, near edge y=-0.201, surface z=0.824 -->
+    <body name="workshop_table" pos="0 -0.610 0">
+      <geom type="box" size="0.612 0.409 0.023" pos="0 0 0.801" material="vention_black"
+            mass="30" contype="1" conaffinity="1"/>
+      <geom type="box" size="0.614 0.411 0.023" pos="0 0 0.790" material="vention_blue"/>
+      <geom type="box" size="0.023 0.023 0.387" pos="-0.585 -0.383 0.435" material="vention_blue"/>
+      <geom type="box" size="0.023 0.023 0.387" pos=" 0.585 -0.383 0.435" material="vention_blue"/>
+      <geom type="box" size="0.023 0.023 0.387" pos="-0.585  0.383 0.435" material="vention_blue"/>
+      <geom type="box" size="0.023 0.023 0.387" pos=" 0.585  0.383 0.435" material="vention_blue"/>
+      <geom type="box" size="0.602 0.399 0.023" pos="0 0 0.124" material="vention_blue"/>
+      <geom type="cylinder" size="0.040 0.010" pos="-0.585 -0.383 0.010" material="vention_black"/>
+      <geom type="cylinder" size="0.040 0.010" pos=" 0.585 -0.383 0.010" material="vention_black"/>
+      <geom type="cylinder" size="0.040 0.010" pos="-0.585  0.383 0.010" material="vention_black"/>
+      <geom type="cylinder" size="0.040 0.010" pos=" 0.585  0.383 0.010" material="vention_black"/>
+    </body>
+
+    <!-- object3: thin blue cylinder (screwdriver handle, r=0.013 fits 4 cm gripper) -->
+    <body name="object3" pos="0.02 -0.540 0.920">
+      <joint name="object3_joint" type="free"/>
+      <geom name="object3_geom" type="cylinder" size="0.013 0.075"
+            rgba="0.10 0.45 0.85 1" solimp="0.015 1 0.02" solref="0.005 1"
+            condim="6" friction="2.5 1.0 0.01"/>
+    </body>
+
+    <!-- hammer (gray head + brown handle, lying on side) -->
+    <body name="obstacle_hammer" pos="-0.05 -0.620 0.840">
+      <joint name="obstacle_hammer_joint" type="free"/>
+      <geom class="obj_viz" mesh="hammer_head" rgba="0.65 0.65 0.68 1"/>
+      <geom class="obj_viz" mesh="hammer_neck" rgba="0.60 0.40 0.22 1"/>
+      <geom class="obj_col" mesh="hammer_c0" condim="4"/>
+      <geom class="obj_col" mesh="hammer_c1" condim="4"/>
+    </body>
+
+    <!-- flashlight (bright orange, lying on side) -->
+    <body name="obstacle_flashlight" pos="0.16 -0.480 0.835">
+      <joint name="obstacle_flashlight_joint" type="free"/>
+      <geom class="obj_viz" mesh="flashlight" rgba="0.95 0.55 0.05 1"/>
+      <geom class="obj_col" mesh="flashlight_c0"/>
+      <geom class="obj_col" mesh="flashlight_c1"/>
+    </body>
+
+    <!-- stapler (dark gray, sitting upright) -->
+    <body name="obstacle_stapler" pos="-0.17 -0.450 0.840">
+      <joint name="obstacle_stapler_joint" type="free"/>
+      <geom class="obj_viz" mesh="stapler" rgba="0.18 0.18 0.20 1"/>
+      <geom type="box" size=".053 .007 .006" pos="0 0 .003" rgba=".7 .7 .7 1" group="2" contype="0" conaffinity="0"/>
+      <geom class="obj_col" mesh="stapler_c0" condim="4"/>
+      <geom class="obj_col" mesh="stapler_c1" condim="4"/>
+      <geom class="obj_col" mesh="stapler_c2" condim="4"/>
+      <geom class="obj_col" mesh="stapler_c3" condim="4"/>
+      <geom class="obj_col" mesh="stapler_c4" condim="4"/>
+    </body>
+
+    <!-- wrench (flat metal bar, lying on table) -->
+    <body name="obstacle_wrench" pos="0.08 -0.740 0.834">
+      <joint name="obstacle_wrench_joint" type="free"/>
+      <geom name="obstacle_wrench_geom" type="box" size="0.032 0.150 0.010"
+            rgba="0.55 0.55 0.60 1" condim="3"/>
+    </body>
+
+    <!-- bolt (small cylinder on its side) -->
+    <body name="obstacle_bolt" pos="0.20 -0.600 0.831" euler="0 1.5708 0">
+      <joint name="obstacle_bolt_joint" type="free"/>
+      <geom name="obstacle_bolt_geom" type="cylinder" size="0.008 0.028"
+            rgba="0.55 0.55 0.60 1" condim="3"/>
+    </body>
+
+    <!-- pliers (elongated dark box) -->
+    <body name="obstacle_pliers" pos="-0.18 -0.750 0.844">
+      <joint name="obstacle_pliers_joint" type="free"/>
+      <geom name="obstacle_pliers_geom" type="box" size="0.018 0.090 0.020"
+            rgba="0.28 0.28 0.32 1" condim="3"/>
+    </body>
+
+  </worldbody>
+</mujoco>

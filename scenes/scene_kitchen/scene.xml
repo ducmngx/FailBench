@@ -1,0 +1,148 @@
+<mujoco model="scene_kitchen">
+  <!--
+    Scene: Kitchen tabletop (simpleWoodTable)
+    Table surface z=0.760 m; near edge y=-0.200 (table body at y=-0.575)
+    Mesh objects: cubesmall (object3), apple, banana, knife, alarmclock, rubberduck
+    Cylinder primitives: coffeemug, bowl
+  -->
+  <size nconmax="600" njmax="2500"/>
+  <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
+          iterations="30" ls_iterations="10" noslip_tolerance="1e-6"/>
+  <option noslip_iterations="3"><flag multiccd="enable" gravity="enable"/></option>
+  <statistic center="0.0 -0.575 0.82" extent="1.2"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="wood" rgba="0.65 0.45 0.25 1" shininess="0.15" reflectance="0.1"/>
+
+    <!-- object_sim meshes (resolved relative to meshdir="assets") -->
+    <mesh name="cubesmall"      file="cubesmall.stl"/>
+    <mesh name="cubesmall_c0"   file="cubesmall_c0.stl"/>
+    <mesh name="apple"          file="apple.stl"/>
+    <mesh name="apple_c0"       file="apple_c0.stl"/>
+    <mesh name="apple_c1"       file="apple_c1.stl"/>
+    <mesh name="banana"         file="banana.stl"/>
+    <mesh name="banana_c0"      file="banana_c0.stl"/>
+    <mesh name="banana_c1"      file="banana_c1.stl"/>
+    <mesh name="banana_c2"      file="banana_c2.stl"/>
+    <mesh name="banana_c3"      file="banana_c3.stl"/>
+    <mesh name="banana_c4"      file="banana_c4.stl"/>
+    <mesh name="knife_blade"    file="knife_blade.stl"/>
+    <mesh name="knife_handle"   file="knife_handle.stl"/>
+    <mesh name="knife_c0"       file="knife_c0.stl"/>
+    <mesh name="knife_c1"       file="knife_c1.stl"/>
+    <mesh name="alarmclock"     file="alarmclock.stl"/>
+    <mesh name="alarmclock_c0"  file="alarmclock_c0.stl"/>
+    <mesh name="rubberduck"     file="rubberduck.stl"/>
+    <mesh name="rubberduck_c0"  file="rubberduck_c0.stl"/>
+    <mesh name="rubberduck_c1"  file="rubberduck_c1.stl"/>
+    <mesh name="rubberduck_c2"  file="rubberduck_c2.stl"/>
+  </asset>
+
+  <!-- object_sim physics defaults -->
+  <default>
+    <default class="obj_col">
+      <geom type="mesh" contype="1" conaffinity="1" group="3"
+            friction="1 0.5 0.01" condim="4" density="1250" rgba=".3 .4 .5 0"/>
+    </default>
+    <default class="obj_viz">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+  </default>
+
+  <include file="../../franka_emika_panda/panda_elevated.xml"/>
+
+  <worldbody>
+    <light pos="0 0 2.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
+    <camera name="front_cam" pos="-0.65 -1.5 1.456"
+            xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
+
+    <!-- simpleWoodTable: body y=-0.575, near edge y=-0.200 -->
+    <body name="kitchen_table" pos="0 -0.575 0">
+      <geom type="box" size="0.60 0.375 0.025" pos="0 0 0.735" material="wood"
+            mass="40" contype="1" conaffinity="1"/>
+      <geom type="box" size="0.59 0.26 0.050" pos="0 0 0.660" rgba="0.55 0.38 0.20 1"/>
+      <geom type="box" size="0.025 0.025 0.305" pos="-0.565  0.235 0.305" rgba="0.50 0.33 0.18 1"/>
+      <geom type="box" size="0.025 0.025 0.305" pos="-0.565 -0.235 0.305" rgba="0.50 0.33 0.18 1"/>
+      <geom type="box" size="0.025 0.025 0.305" pos=" 0.565  0.235 0.305" rgba="0.50 0.33 0.18 1"/>
+      <geom type="box" size="0.025 0.025 0.305" pos=" 0.565 -0.235 0.305" rgba="0.50 0.33 0.18 1"/>
+    </body>
+
+    <!-- object3: cubesmall mesh — green, grasped object -->
+    <body name="object3" pos="0.02 -0.505 0.790">
+      <joint name="object3_joint" type="free"/>
+      <geom name="object3_geom" class="obj_viz" mesh="cubesmall" rgba="0.0 0.55 0.15 1"/>
+      <geom class="obj_col" mesh="cubesmall_c0" solimp="0.015 1 0.02" solref="0.005 1"
+            friction="2.8 1.2 0.1" condim="6"/>
+    </body>
+
+    <!-- apple (red/dark red, roughly 7 cm diameter) -->
+    <body name="obstacle_apple" pos="-0.05 -0.430 0.800">
+      <joint name="obstacle_apple_joint" type="free"/>
+      <geom class="obj_viz" mesh="apple" rgba="0.75 0.08 0.06 1"/>
+      <geom class="obj_col" mesh="apple_c0"/>
+      <geom class="obj_col" mesh="apple_c1"/>
+    </body>
+
+    <!-- banana (yellow, curved, lying on side) -->
+    <body name="obstacle_banana" pos="0.14 -0.450 0.790">
+      <joint name="obstacle_banana_joint" type="free"/>
+      <geom class="obj_viz" mesh="banana" rgba="0.97 0.88 0.05 1"/>
+      <geom class="obj_col" mesh="banana_c0"/>
+      <geom class="obj_col" mesh="banana_c1"/>
+      <geom class="obj_col" mesh="banana_c2"/>
+      <geom class="obj_col" mesh="banana_c3"/>
+      <geom class="obj_col" mesh="banana_c4"/>
+    </body>
+
+    <!-- knife (silver blade + dark handle, lying flat) -->
+    <body name="obstacle_knife" pos="0.05 -0.680 0.775">
+      <joint name="obstacle_knife_joint" type="free"/>
+      <geom class="obj_viz" mesh="knife_blade"  rgba="0.80 0.80 0.85 1"/>
+      <geom class="obj_viz" mesh="knife_handle" rgba="0.12 0.08 0.06 1"/>
+      <geom class="obj_col" mesh="knife_c0" condim="4"/>
+      <geom class="obj_col" mesh="knife_c1" condim="4"/>
+    </body>
+
+    <!-- alarm clock (dark green, standing upright) -->
+    <body name="obstacle_alarmclock" pos="-0.20 -0.540 0.810">
+      <joint name="obstacle_alarmclock_joint" type="free"/>
+      <geom class="obj_viz" mesh="alarmclock" rgba="0.15 0.25 0.20 1"/>
+      <geom type="cylinder" size=".040 0.002" rgba=".7 .7 .74 1" pos="0 -.015 -.01" euler="1.57 0 0"/>
+      <geom class="obj_col" mesh="alarmclock_c0"/>
+    </body>
+
+    <!-- rubber duck (bright yellow, fun kitchen item) -->
+    <body name="obstacle_rubberduck" pos="0.18 -0.550 0.795">
+      <joint name="obstacle_rubberduck_joint" type="free"/>
+      <geom class="obj_viz" mesh="rubberduck" rgba="0.98 0.88 0.04 1"/>
+      <geom class="obj_col" mesh="rubberduck_c0"/>
+      <geom class="obj_col" mesh="rubberduck_c1"/>
+      <geom class="obj_col" mesh="rubberduck_c2"/>
+    </body>
+
+    <!-- coffeemug (cylinder, brown-red) -->
+    <body name="obstacle_coffeemug" pos="-0.18 -0.420 0.810">
+      <joint name="obstacle_coffeemug_joint" type="free"/>
+      <geom name="obstacle_coffeemug_geom" type="cylinder" size="0.030 0.050"
+            rgba="0.55 0.22 0.08 1" condim="3"/>
+    </body>
+
+    <!-- bowl (wide flat cylinder, white) -->
+    <body name="obstacle_bowl" pos="-0.10 -0.630 0.782">
+      <joint name="obstacle_bowl_joint" type="free"/>
+      <geom name="obstacle_bowl_geom" type="cylinder" size="0.055 0.022"
+            rgba="0.92 0.92 0.92 1" condim="3"/>
+    </body>
+
+  </worldbody>
+</mujoco>

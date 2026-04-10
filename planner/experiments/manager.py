@@ -67,8 +67,9 @@ def save_sample_npz(sample: DataSample, path: str) -> None:
         "failure_modes": failure_modes,
         "failure_probs": failure_probs,
         "impacted_geom_ids": np.array(sample.all_impacted_geom_ids, dtype=np.int32),
-        "fail_phase": np.array([sample.fail_phase], dtype=np.int32),
-        "fail_step": np.array([sample.fail_step], dtype=np.int32),
+        "task_id": np.array([sample.task_id]),
+        "traj_id": np.array([sample.traj_id], dtype=np.int32),
+        "traj_progress": np.array([sample.traj_progress], dtype=np.float32),
         "seed": np.array([sample.seed], dtype=np.int32),
         "pre_qvel_norm": np.array(
             [np.linalg.norm(sample.pre_failure_robot.qvel)], dtype=np.float64
@@ -103,10 +104,11 @@ def load_sample_npz(path: str) -> dict:
 def _manifest_row(sample: DataSample, npz_filename: str) -> dict:
     return {
         "experiment_id": sample.experiment_id,
+        "task_id": sample.task_id,
+        "traj_id": sample.traj_id,
         "trajectory_file": os.path.basename(sample.trajectory_file),
         "seed": sample.seed,
-        "fail_phase": sample.fail_phase,
-        "fail_step": sample.fail_step,
+        "traj_progress": round(float(sample.traj_progress), 4),
         "num_contacts": len(sample.aggregate_contacts),
         "num_failure_modes": len(sample.failure_results),
         "had_any_collision": any(fr.had_collision for fr in sample.failure_results),
@@ -117,8 +119,8 @@ def _manifest_row(sample: DataSample, npz_filename: str) -> dict:
 
 
 _MANIFEST_COLUMNS = [
-    "experiment_id", "trajectory_file", "seed", "fail_phase", "fail_step",
-    "num_contacts", "num_failure_modes", "had_any_collision",
+    "experiment_id", "task_id", "traj_id", "trajectory_file", "seed",
+    "traj_progress", "num_contacts", "num_failure_modes", "had_any_collision",
     "impacted_geom_ids", "pre_qvel_norm", "npz_file",
 ]
 

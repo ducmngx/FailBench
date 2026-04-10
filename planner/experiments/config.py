@@ -44,19 +44,20 @@ class ExperimentConfig:
 
     failure_configs: List[FailureConfig] = field(default_factory=_default_failures)
 
+    # Task identity
+    task_id: str = "unknown"
+    traj_id: int = 0
+
     # Where along the trajectory to inject failure
-    fail_phase: Optional[int] = None   # 6 or 7; None = random
-    fail_step_offset: Optional[int] = None  # legacy: waypoint index; None = random
-    fail_fraction: Optional[float] = None   # fraction [0,1] of phase; None = random from canonical set
+    fail_fraction: Optional[float] = None   # fraction [0,1] of trajectory; None = random from canonical set
     canonical_fail_fractions: List[float] = field(
         default_factory=lambda: [0.1, 0.25, 0.4, 0.55, 0.7, 0.85]
     )
 
     # Trajectory interpolation
-    use_interpolation: bool = False
-    interp_points_per_segment: int = 50
+    interp_points_per_segment: int = 100
     interp_method: str = "cubic"       # "cubic" or "linear"
-    steps_per_interp_point: int = 4    # sim steps per dense point
+    steps_per_interp_point: int = 8    # sim steps per dense point (more = better tracking)
 
     # Failure selection: "all" runs every mode, "sample" picks probabilistically
     failure_sample_mode: str = "all"
@@ -77,5 +78,8 @@ class ExperimentConfig:
 
     # Post-failure settle
     post_failure_settle_steps: int = 500
+
+    # Grasped object body name (must have a free joint and <name>_geom)
+    grasped_object_name: str = "object3"
 
     experiment_id: Optional[str] = None

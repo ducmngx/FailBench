@@ -346,17 +346,20 @@ class PandaPickAndPlace:
                 frame_name="end_effector",
                 frame_type="site"
             )        
-        # Try multiple IK seeds (increased attempts for constrained cases)
+        # Try multiple IK seeds (increased attempts for constrained cases).
+        # Use a single RNG that advances across attempts so each gets a
+        # different random seed config (the old code re-created the RNG with
+        # the same seed every iteration, making attempts 1-N identical).
         max_attempts = 20 if use_downward_constraint else 10
         goal_configs = []
-        # In your plan_to_ee_pose, when finding IK solutions:
+        ik_rng = np.random.RandomState(self.seed)
         for attempt in range(max_attempts):
             if attempt == 0:
                 # First attempt: use current configuration as seed
                 seed = self.get_current_config()
             else:
-                # Other attempts: random seeds
-                seed = self.ik_solver.get_random_valid_config(rng=np.random.RandomState(self.seed))
+                # Other attempts: advancing random seeds
+                seed = self.ik_solver.get_random_valid_config(rng=ik_rng)
                 
             if seed is None:
                 continue
@@ -366,7 +369,7 @@ class PandaPickAndPlace:
                 if not self.collision_checker.check_collisions(solution):
                     goal_configs.append(solution)
                     print(f"   Found IK solution {len(goal_configs)}")
-                    if len(goal_configs) >= 10:
+                    if len(goal_configs) >= 3:
                         break
         
         if not goal_configs:
@@ -374,7 +377,7 @@ class PandaPickAndPlace:
             # If constrained planning failed, try unconstrained as fallback
             if use_downward_constraint:
                 print("🔄 Trying fallback without orientation constraint...")
-                return self.plan_to_ee_pose(target_pos, use_downward_constraint=False)
+                return self.plan_to_ee_pose(target_pos, task_type=task_type, use_downward_constraint=False)
             return False
         
         # Try RRT to each goal
