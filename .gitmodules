@@ -1,0 +1,3 @@
+[submodule "external/GraspGen"]
+	path = external/GraspGen
+	url = https://github.com/NVlabs/GraspGen

@@ -13,3 +13,9 @@ MUJOCO_LOG.TXT
 # External assets (cloned repos — download via external_assets/setup.sh)
 external_assets/vikashplus_*/
 external_assets/kevinzakka_*/
+
+# GraspGen submodule — ignore venv and checkpoints (installed via scripts/install_graspgen.sh)
+external/GraspGen/.venv/
+external/GraspGen/checkpoints/
+external/GraspGen/**/*.egg-info/
+external/GraspGen/**/__pycache__/
