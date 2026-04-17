@@ -165,8 +165,41 @@ tasks:
 
   pick_rubberduck:
     category: pick
-    description: "Pick the rubber duck mesh (real object, 6-DoF GraspGen pose)"
+    description: "Pick the rubber duck mesh (6-DoF GraspGen pose)"
     grasped_object: obstacle_rubberduck
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.45], y: [-0.40, -0.55]}
+      check_clearance: true
+
+  pick_banana:
+    category: pick
+    description: "Pick the banana mesh (6-DoF GraspGen pose)"
+    grasped_object: obstacle_banana
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.45], y: [-0.40, -0.55]}
+      check_clearance: true
+
+  pick_apple:
+    category: pick
+    description: "Pick the apple mesh (6-DoF GraspGen pose)"
+    grasped_object: obstacle_apple
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.45], y: [-0.40, -0.55]}
+      check_clearance: true
+
+  pick_alarmclock:
+    category: pick
+    description: "Pick the alarm clock mesh (6-DoF GraspGen pose)"
+    grasped_object: obstacle_alarmclock
     place_height: table_surface
     goal:
       type: zones
