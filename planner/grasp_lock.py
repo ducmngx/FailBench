@@ -62,6 +62,28 @@ class GraspLock:
         self._T_hand_to_obj = np.eye(4)
         self.active = False
 
+    def attach_strict(self, model, data, obj_body_name) -> bool:
+        """Attach iff at least one finger body is in contact with the object.
+
+        Returns True if the lock engaged, False if no finger↔object contact was
+        found (caller should treat this as a failed grasp and let physics run).
+        """
+        obj_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, obj_body_name)
+        finger_bids = {
+            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n)
+            for n in ("left_finger", "right_finger")
+        }
+        finger_bids.discard(-1)
+        for i in range(data.ncon):
+            c = data.contact[i]
+            b1 = model.geom_bodyid[c.geom1]
+            b2 = model.geom_bodyid[c.geom2]
+            if (b1 == obj_bid and b2 in finger_bids) or \
+               (b2 == obj_bid and b1 in finger_bids):
+                self.attach(model, data, obj_body_name)
+                return True
+        return False
+
     def attach(self, model, data, obj_body_name):
         """Record hand⁻¹ @ obj and start tracking.  Call after gripper-close settle."""
         self._obj_bid = mujoco.mj_name2id(

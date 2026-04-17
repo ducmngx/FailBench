@@ -60,12 +60,34 @@ def _collect_trajs(scene, task, trajs_dir):
     return files
 
 
+def _filter_meshes_only(pkl_paths):
+    """Keep only pkls whose grasp_meta.source == 'graspgen'.
+
+    Legacy pkls without grasp_meta are dropped — the flag is for focused
+    inspection of GraspGen-produced trajectories, not legacy content.
+    """
+    kept = []
+    for p in pkl_paths:
+        try:
+            with open(p, "rb") as f:
+                data = pickle.load(f)
+            entry = data[next(iter(data))]
+            meta = entry.get("grasp_meta")
+            if meta is not None and meta.get("source") == "graspgen":
+                kept.append(p)
+        except Exception:
+            continue
+    return kept
+
+
 # ---------------------------------------------------------------------------
 # Playback
 # ---------------------------------------------------------------------------
 
 def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
-         interp_points=100, steps_per_point=8):
+         interp_points=100, steps_per_point=8,
+         show_meta=False, pause_at_grasp=False, flag_bad=False,
+         flagged_log=None, strict_attach=False):
     """Play all trajectories in pkl_paths using a shared MuJoCo viewer."""
     model = mujoco.MjModel.from_xml_path(scene_xml)
     data = mujoco.MjData(model)
@@ -93,10 +115,23 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
             traj_id = entry.get("traj_id", i)
             grasped = entry.get("grasped_object", "object3")
             goal = entry.get("goal_pos")
+            meta = entry.get("grasp_meta")
 
             print(f"[{i+1}/{n_total}] {os.path.basename(pkl_path)}")
             print(f"         task={task_id}  traj={traj_id}  "
                   f"object={grasped}  goal={np.round(goal, 3) if goal is not None else 'N/A'}")
+            if show_meta and meta is not None:
+                src = meta.get("source", "?")
+                gid = meta.get("grasp_id") or "-"
+                conf = meta.get("confidence")
+                conf_s = f"{conf:.3f}" if isinstance(conf, (int, float)) else "-"
+                ik = meta.get("ik_attempts", "-")
+                rc = meta.get("retry_count", "-")
+                axis = meta.get("approach_axis")
+                axis_s = (f"[{axis[0]:+.2f},{axis[1]:+.2f},{axis[2]:+.2f}]"
+                          if axis is not None else "-")
+                print(f"         grasp: src={src}  id={gid}  conf={conf_s}  "
+                      f"ik_tries={ik}  retry={rc}  axis={axis_s}")
 
             # Reset full environment to initial state
             data.qpos[:] = init_qpos
@@ -148,6 +183,13 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
 
                     if action == "grasp":
                         print(" → GRASP", end="")
+                        if pause_at_grasp:
+                            print()
+                            try:
+                                input("         [ENTER to execute grasp, Ctrl-C to abort]: ")
+                            except (EOFError, KeyboardInterrupt):
+                                print()
+                                return
                         for step in range(30):
                             data.ctrl[7] = 255.0 * (1 - step / 30 * 0.95)
                             for _ in range(20):
@@ -159,7 +201,11 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
                             mujoco.mj_step(model, data)
                             viewer.sync()
                             time.sleep(0.001)
-                        lock.attach(model, data, grasped)
+                        if strict_attach:
+                            if not lock.attach_strict(model, data, grasped):
+                                print(" → GRASP-FAILED (no contact)", end="")
+                        else:
+                            lock.attach(model, data, grasped)
                     elif action == "release":
                         print(" → RELEASE", end="")
                         lock.release(data)
@@ -194,7 +240,22 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
                 viewer.sync()
                 time.sleep(0.002)
 
+            if flag_bad and flagged_log is not None and viewer.is_running():
+                try:
+                    ans = input(f"         flag this traj as bad? [y/N]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    return
+                if ans == "y":
+                    with open(flagged_log, "a") as fl:
+                        fl.write(f"{pkl_path}\n")
+                    print(f"         → logged to {flagged_log}")
+
         print("\nPlayback complete.")
+        if flag_bad and flagged_log is not None and os.path.exists(flagged_log):
+            with open(flagged_log) as fl:
+                n_flagged = sum(1 for _ in fl)
+            print(f"Flagged {n_flagged} trajectory/ies in {flagged_log}")
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +281,17 @@ if __name__ == "__main__":
                         help="Playback speed multiplier (default 1.0)")
     parser.add_argument("--interp_points", type=int, default=100,
                         help="Interpolation points per segment (default 100)")
+    parser.add_argument("--meshes_only", action="store_true",
+                        help="Skip trajs whose grasp_meta.source != 'graspgen'.")
+    parser.add_argument("--show_meta", action="store_true",
+                        help="Print grasp_meta (grasp_id, confidence, ik_attempts) per traj.")
+    parser.add_argument("--pause_at_grasp", action="store_true",
+                        help="Wait for ENTER at each grasp action to freeze-frame for inspection.")
+    parser.add_argument("--flag_bad", action="store_true",
+                        help="After each traj, prompt y/N; flagged pkl paths are appended to .flagged.txt.")
+    parser.add_argument("--strict-attach", action="store_true", dest="strict_attach",
+                        help="Require finger-object contact before engaging GraspLock; "
+                             "print GRASP-FAILED when fingers didn't actually close on the object.")
 
     args = parser.parse_args()
 
@@ -229,6 +301,7 @@ if __name__ == "__main__":
         scene = os.path.basename(args.traj_file).split("_")[0] + "_" + \
                 os.path.basename(args.traj_file).split("_")[1]
         scene_xml = args.scene_xml or f"scenes/{scene}/scene.xml"
+        flagged_log = None
     elif args.scene:
         scene = args.scene
         trajs_dir = f"scenes/{scene}/trajs"
@@ -236,10 +309,13 @@ if __name__ == "__main__":
             print(f"No trajs directory found at {trajs_dir}")
             sys.exit(1)
         pkl_paths = _collect_trajs(scene, args.task, trajs_dir)
+        if args.meshes_only:
+            pkl_paths = _filter_meshes_only(pkl_paths)
         if not pkl_paths:
             print(f"No trajectories found for scene={scene} task={args.task}")
             sys.exit(1)
         scene_xml = args.scene_xml or f"scenes/{scene}/scene.xml"
+        flagged_log = os.path.join(trajs_dir, ".flagged.txt") if args.flag_bad else None
     else:
         parser.print_help()
         sys.exit(1)
@@ -250,4 +326,9 @@ if __name__ == "__main__":
         hold_secs=args.hold,
         speed=args.speed,
         interp_points=args.interp_points,
+        show_meta=args.show_meta,
+        pause_at_grasp=args.pause_at_grasp,
+        flag_bad=args.flag_bad,
+        flagged_log=flagged_log,
+        strict_attach=args.strict_attach,
     )

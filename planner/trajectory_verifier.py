@@ -104,6 +104,7 @@ def verify_trajectory(
     grasp_z_margin: float = 0.10,
     place_xy_tolerance: float = 0.05,
     settle_steps: int = 300,
+    strict_attach: bool = False,
 ) -> VerificationResult:
     """Replay a trajectory pkl through physics and verify quality.
 
@@ -117,6 +118,9 @@ def verify_trajectory(
     grasp_z_margin : meters above table_z to confirm successful pick
     place_xy_tolerance : meters; max xy distance from goal after release
     settle_steps : sim steps to settle after grasp/release actions
+    strict_attach : require finger-object contact before engaging GraspLock;
+        if no contact, the lock is skipped and the post-lift z check naturally
+        rejects the trajectory.
     """
     # Load trajectory
     with open(pkl_path, "rb") as f:
@@ -205,7 +209,11 @@ def verify_trajectory(
             grip_ctrl = data.ctrl[7]
             for _ in range(settle_steps):
                 mujoco.mj_step(model, data)
-            lock.attach(model, data, grasped_object)
+            if strict_attach:
+                if not lock.attach_strict(model, data, grasped_object):
+                    issues.append("grasp failed: no finger-object contact")
+            else:
+                lock.attach(model, data, grasped_object)
 
         elif action == "release":
             lock.release(data)

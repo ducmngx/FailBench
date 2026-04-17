@@ -86,14 +86,15 @@ class GraspSampler:
             self.index: dict = json.load(f)
         self._yaml_cache: dict[str, list[dict]] = {}
 
-    def _load_grasps(self, sha: str) -> list[dict]:
+    def _load_grasps(self, sha: str) -> list[tuple[str, dict]]:
+        """Return grasps as (grasp_id, grasp_data) tuples sorted by -confidence."""
         if sha in self._yaml_cache:
             return self._yaml_cache[sha]
         yml_path = os.path.join(self.cache_dir, f"{sha}.yml")
         with open(yml_path) as f:
             data = yaml.safe_load(f)
-        grasps = sorted(data["grasps"].values(),
-                        key=lambda g: -g["confidence"])
+        grasps = sorted(data["grasps"].items(),
+                        key=lambda kv: -kv[1]["confidence"])
         self._yaml_cache[sha] = grasps
         return grasps
 
@@ -114,23 +115,21 @@ class GraspSampler:
             )
         return sha
 
-    def sample(
+    def sample_ranked(
         self,
         mesh_path: str,
         T_obj_world: np.ndarray,
         seed: int = 0,
+        n: int = 8,
         top_k: int = 40,
         max_approach_z: float = -0.85,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Sample one grasp; return (tcp_pos_world, quat_wxyz_world, approach_axis_world).
+    ) -> list[Tuple[np.ndarray, np.ndarray, np.ndarray, str, float]]:
+        """Return up to ``n`` world-frame grasp candidates in shuffled order.
 
-        approach_axis is the gripper's +Z in world frame — callers can use it
-        to place an approach waypoint as ``tcp_pos - d * approach_axis``.
-
-        ``max_approach_z`` keeps only grasps whose world-frame approach axis
-        Z-component is BELOW this (negative) value.  GraspGen's +Z is the
-        gripper's advance direction, so a top-down grasp has approach_z≈-1.
-        Default -0.5 ≈ within 60° of straight-down.
+        Each candidate is ``(tcp_pos_world, quat_wxyz_world, approach_axis_world,
+        grasp_id, confidence)``. The shuffle is deterministic in ``seed`` so
+        retries can be reproduced. Callers typically iterate this list and
+        pick the first one that passes an IK-feasibility check.
         """
         sha = self._resolve_sha(mesh_path)
         grasps = self._load_grasps(sha)[:top_k]
@@ -139,39 +138,56 @@ class GraspSampler:
 
         R_obj_world = T_obj_world[:3, :3]
 
-        eligible = []
-        for g in grasps:
+        eligible: list[tuple[str, dict]] = []
+        for gid, g in grasps:
             q = g["orientation"]
             R_obj = _quat_wxyz_to_matrix(q["w"], *q["xyz"])
             approach_world = R_obj_world @ R_obj[:, 2]
             if approach_world[2] <= max_approach_z:
-                eligible.append(g)
+                eligible.append((gid, g))
 
         if not eligible:
             # Fallback: most-downward top-5 regardless of threshold
             scored = sorted(
                 grasps,
-                key=lambda gg: (R_obj_world @ _quat_wxyz_to_matrix(
-                    gg["orientation"]["w"], *gg["orientation"]["xyz"])[:, 2])[2],
+                key=lambda kv: (R_obj_world @ _quat_wxyz_to_matrix(
+                    kv[1]["orientation"]["w"], *kv[1]["orientation"]["xyz"])[:, 2])[2],
             )
             eligible = scored[:5]
 
         rng = np.random.RandomState(seed)
-        g = eligible[rng.randint(len(eligible))]
+        order = rng.permutation(len(eligible))
+        chosen = [eligible[i] for i in order[:n]]
 
-        q = g["orientation"]
-        R_obj = _quat_wxyz_to_matrix(q["w"], *q["xyz"])
-        t_obj = np.asarray(g["position"], dtype=float)
+        out: list[Tuple[np.ndarray, np.ndarray, np.ndarray, str, float]] = []
+        for gid, g in chosen:
+            q = g["orientation"]
+            R_obj = _quat_wxyz_to_matrix(q["w"], *q["xyz"])
+            t_obj = np.asarray(g["position"], dtype=float)
 
-        T_grasp_obj = np.eye(4)
-        T_grasp_obj[:3, :3] = R_obj
-        T_grasp_obj[:3, 3] = t_obj
+            T_grasp_obj = np.eye(4)
+            T_grasp_obj[:3, :3] = R_obj
+            T_grasp_obj[:3, 3] = t_obj
 
-        T_world = T_obj_world @ T_grasp_obj
-        approach_axis = T_world[:3, 2].copy()
-        approach_axis /= max(np.linalg.norm(approach_axis), 1e-9)
+            T_world = T_obj_world @ T_grasp_obj
+            approach_axis = T_world[:3, 2].copy()
+            approach_axis /= max(np.linalg.norm(approach_axis), 1e-9)
 
-        # Gripper base → TCP
-        tcp_pos = T_world[:3, 3] + GRASPGEN_PANDA_DEPTH * approach_axis
-        quat_wxyz = _matrix_to_quat_wxyz(T_world[:3, :3])
-        return tcp_pos, quat_wxyz, approach_axis
+            tcp_pos = T_world[:3, 3] + GRASPGEN_PANDA_DEPTH * approach_axis
+            quat_wxyz = _matrix_to_quat_wxyz(T_world[:3, :3])
+            out.append((tcp_pos, quat_wxyz, approach_axis, gid, float(g["confidence"])))
+        return out
+
+    def sample(
+        self,
+        mesh_path: str,
+        T_obj_world: np.ndarray,
+        seed: int = 0,
+        top_k: int = 40,
+        max_approach_z: float = -0.85,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+        """Sample one grasp; return (tcp_pos, quat_wxyz, approach_axis, grasp_id)."""
+        cands = self.sample_ranked(mesh_path, T_obj_world, seed=seed, n=1,
+                                    top_k=top_k, max_approach_z=max_approach_z)
+        tcp, quat, axis, gid, _conf = cands[0]
+        return tcp, quat, axis, gid

@@ -309,6 +309,37 @@ class PandaPickAndPlace:
         print("❌ RRT failed to reach any IK solution")
         return False
         
+    def check_ik_feasibility(self, target_pos: np.ndarray,
+                             target_quat_wxyz: np.ndarray,
+                             max_attempts: int = 10) -> bool:
+        """Return True iff at least one collision-free IK solution exists.
+
+        Cheap screen used before committing to the full IK+RRT plan for a
+        given grasp candidate. Mirrors the IK loop in ``plan_to_ee_pose`` but
+        stops at the first collision-free solution and never runs RRT.
+        """
+        try:
+            target = EndEffectorTarget(
+                position=target_pos,
+                orientation=np.asarray(target_quat_wxyz, dtype=float),
+                frame_name="end_effector",
+                frame_type="site",
+            )
+        except Exception:
+            return False
+        ik_rng = np.random.RandomState(self.seed)
+        for attempt in range(max_attempts):
+            if attempt == 0:
+                seed = self.get_current_config()
+            else:
+                seed = self.ik_solver.get_random_valid_config(rng=ik_rng)
+            if seed is None:
+                continue
+            solution, result = self.ik_solver.solve(target, seed)
+            if result == IKResult.SUCCESS and not self.collision_checker.check_collisions(solution):
+                return True
+        return False
+
     def plan_to_ee_pose(self, target_pos: np.ndarray, task_type: str,
                         use_downward_constraint: bool = False,
                         target_quat_wxyz: Optional[np.ndarray] = None) -> bool:

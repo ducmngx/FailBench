@@ -164,6 +164,7 @@ tasks:
       check_clearance: true
 
   pick_rubberduck:
+    enabled: false
     category: pick
     description: "Pick the rubber duck mesh (6-DoF GraspGen pose)"
     grasped_object: obstacle_rubberduck
@@ -175,6 +176,7 @@ tasks:
       check_clearance: true
 
   pick_banana:
+    enabled: false
     category: pick
     description: "Pick the banana mesh (6-DoF GraspGen pose)"
     grasped_object: obstacle_banana
@@ -186,6 +188,7 @@ tasks:
       check_clearance: true
 
   pick_apple:
+    enabled: false
     category: pick
     description: "Pick the apple mesh (6-DoF GraspGen pose)"
     grasped_object: obstacle_apple
@@ -197,6 +200,7 @@ tasks:
       check_clearance: true
 
   pick_alarmclock:
+    enabled: false
     category: pick
     description: "Pick the alarm clock mesh (6-DoF GraspGen pose)"
     grasped_object: obstacle_alarmclock

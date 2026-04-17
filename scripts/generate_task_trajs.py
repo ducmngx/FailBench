@@ -349,7 +349,7 @@ def _plan_full_mission(planner, obj_pos, goal_xy, heights, place_height, seed_of
 # ---------------------------------------------------------------------------
 
 def generate(scene, task, n_trajs, seed, scene_xml=None, robot_xml=None,
-             out_dir=None, max_retries=5):
+             out_dir=None, max_retries=5, strict_attach=False):
     scene_xml = scene_xml or f"scenes/{scene}/scene.xml"
     robot_xml = robot_xml or _detect_robot_xml(scene_xml)
     out_dir = out_dir or f"scenes/{scene}/trajs"
@@ -435,27 +435,60 @@ def generate(scene, task, n_trajs, seed, scene_xml=None, robot_xml=None,
 
             grasp_pos = None
             grasp_quat = None
+            grasp_meta = {
+                "source": "analytic",
+                "grasp_id": None,
+                "confidence": None,
+                "approach_axis": None,
+                "ik_attempts": 0,
+                "retry_count": attempt,
+            }
             if grasp_sampler is not None:
-                # Sample a 6-DoF grasp in world frame; approach waypoint is
-                # offset along the grasp's own approach axis.
+                # Sample a ranked list of 6-DoF grasp candidates in world frame,
+                # then IK-screen each until one is reachable. Avoids burning the
+                # outer retry budget on grasps that can't be reached.
                 T_obj_world = np.eye(4)
                 T_obj_world[:3, 3] = obj_pos
                 grasp_seed = seed + traj_idx * 1000 + attempt
-                grasp_pos, grasp_quat, approach_axis = grasp_sampler.sample(
-                    mesh_path, T_obj_world, seed=grasp_seed
+                candidates = grasp_sampler.sample_ranked(
+                    mesh_path, T_obj_world, seed=grasp_seed, n=8
                 )
+                chosen = None
+                ik_attempts = 0
+                for cand in candidates:
+                    cand_tcp, cand_quat, cand_axis, cand_gid, cand_conf = cand
+                    ik_attempts += 1
+                    if planner.check_ik_feasibility(cand_tcp, cand_quat, max_attempts=8):
+                        chosen = cand
+                        break
+                if chosen is None:
+                    print(f"      no IK-feasible grasp in top {len(candidates)} "
+                          f"candidates; retrying with new seed")
+                    continue
+                grasp_pos, grasp_quat, approach_axis, grasp_id, confidence = chosen
                 # GraspGen's +Z is the gripper's advance direction, so
                 # approach_axis.z is negative for top-down grasps. Subtracting
                 # along approach_axis places the waypoint "behind" the grasp,
                 # i.e. above the object for top-down approaches.
                 approach_pos = grasp_pos - 0.12 * approach_axis
                 approach_pos[2] = max(approach_pos[2], heights["table_z"] + 0.02)
+                grasp_meta = {
+                    "source": "graspgen",
+                    "grasp_id": grasp_id,
+                    "confidence": float(confidence),
+                    "approach_axis": approach_axis.tolist(),
+                    "ik_attempts": ik_attempts,
+                    "retry_count": attempt,
+                }
             else:
                 approach_pos = _sample_approach_pos(obj_pos.copy(), heights, rng)
             print(f"      attempt {attempt+1}/{max_retries}  "
                   f"goal=({goal_xy[0]:.3f}, {goal_xy[1]:.3f})  "
                   f"approach={approach_pos.round(3)}"
-                  + (f"  grasp={grasp_pos.round(3)}" if grasp_pos is not None else ""))
+                  + (f"  grasp={grasp_pos.round(3)}"
+                     f" [{grasp_meta['grasp_id']} conf={grasp_meta['confidence']:.3f}"
+                     f" ik_tries={grasp_meta['ik_attempts']}]"
+                     if grasp_pos is not None else ""))
 
             segments = _plan_full_mission(planner, obj_pos.copy(), goal_xy, heights,
                                           place_height, seed_offset, approach_pos,
@@ -477,6 +510,7 @@ def generate(scene, task, n_trajs, seed, scene_xml=None, robot_xml=None,
                     "grasped_object": grasped_object,
                     "goal_pos": goal_pos,
                     "segments": segments,
+                    "grasp_meta": grasp_meta,
                 }
             }
             with open(tmp_path, "wb") as f:
@@ -484,7 +518,7 @@ def generate(scene, task, n_trajs, seed, scene_xml=None, robot_xml=None,
 
             # Physics verification — replay and check collisions, grasp, place
             print(f"      Verifying via physics replay ...")
-            vr = verify_trajectory(scene_xml, tmp_path)
+            vr = verify_trajectory(scene_xml, tmp_path, strict_attach=strict_attach)
             if not vr.passed:
                 print(f"      REJECTED: {vr.details}")
                 if os.path.exists(tmp_path):
@@ -521,18 +555,27 @@ if __name__ == "__main__":
     parser.add_argument("--robot_xml", default=None)
     parser.add_argument("--out_dir", default=None)
     parser.add_argument("--max_retries", type=int, default=5)
+    parser.add_argument("--strict-attach", action="store_true", dest="strict_attach",
+                        help="Require finger-object contact before engaging GraspLock; "
+                             "trajectories without real contact are rejected as grasp failures.")
     args = parser.parse_args()
 
     if args.task == "all":
         from planner.tasks import load_tasks as _load_tasks
         _yaml = _load_tasks(args.scene)
-        tasks_to_run = list(_yaml["tasks"].keys())
-        print(f"Running all {len(tasks_to_run)} tasks: {tasks_to_run}")
+        all_tasks = _yaml["tasks"]
+        tasks_to_run = [n for n, tdef in all_tasks.items() if tdef.get("enabled", True)]
+        skipped = [n for n in all_tasks if n not in tasks_to_run]
+        if skipped:
+            print(f"Skipping disabled tasks: {skipped}")
+        print(f"Running {len(tasks_to_run)} tasks: {tasks_to_run}")
         for t in tasks_to_run:
             generate(scene=args.scene, task=t, n_trajs=args.n_trajs, seed=args.seed,
                      scene_xml=args.scene_xml, robot_xml=args.robot_xml,
-                     out_dir=args.out_dir, max_retries=args.max_retries)
+                     out_dir=args.out_dir, max_retries=args.max_retries,
+                     strict_attach=args.strict_attach)
     else:
         generate(scene=args.scene, task=args.task, n_trajs=args.n_trajs, seed=args.seed,
                  scene_xml=args.scene_xml, robot_xml=args.robot_xml,
-                 out_dir=args.out_dir, max_retries=args.max_retries)
+                 out_dir=args.out_dir, max_retries=args.max_retries,
+                 strict_attach=args.strict_attach)
