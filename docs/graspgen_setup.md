@@ -53,6 +53,39 @@ external/GraspGen/.venv/bin/python \
 
 Expected: `/tmp/cubesmall_grasps.yml` with 10 ranked 6-DoF grasp poses.
 
+## Precompute grasps for the trajectory generator
+
+The trajectory generator reads precomputed grasps from `cache/graspgen/<sha>.yml`.
+Run this once (and again whenever a pick-target mesh changes):
+
+```bash
+# from failbench_env — the script shells out to the GraspGen venv itself
+conda activate failbench_env
+python scripts/precompute_grasps.py              # scan all scenes/*/tasks.yaml
+python scripts/precompute_grasps.py --force      # regenerate
+python scripts/precompute_grasps.py --mesh scenes/scene_kitchen/assets/cubesmall.stl
+```
+
+Output: `cache/graspgen/<sha>.yml` per unique mesh and `cache/graspgen/index.json`
+mapping repo-relative mesh paths to their SHA. Primitive pick targets (box /
+cylinder geoms) are skipped — the analytic top/side grasp is used there.
+
+## How grasping works (sticky gripper)
+
+Physics-based finger closure is unreliable on mesh objects with complex
+collision hulls — MuJoCo's contact solver can't sustain a grip when the
+fingertip TCP sits inside the object's volume.
+
+Instead, FailBench uses a **kinematic grasp lock** (`planner/grasp_lock.py`):
+when the `"grasp"` action fires, the object's free joint is locked to the
+hand body by recording their relative transform and enforcing it every sim
+step. On `"release"` (or `GRIPPER_OPEN` / `SLIPPERY_GRIP` failure injection),
+the lock is released and the object falls under gravity.
+
+The finger close/open animation still runs for visual fidelity. The lock is
+integrated into all three replay sites: `trajectory_verifier.py`,
+`play_task_trajs.py`, and `experiments/runner.py`.
+
 ## Troubleshooting
 
 - **`install_uv_pointnet.sh` fails with nvcc errors**: install CUDA 12.1 toolkit system-wide (`sudo apt install cuda-toolkit-12-1`) or re-run after verifying `nvcc --version` matches PyTorch's bundled CUDA.

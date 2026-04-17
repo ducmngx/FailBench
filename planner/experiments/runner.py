@@ -10,6 +10,7 @@ import mujoco
 import numpy as np
 
 from planner.experiments.config import ExperimentConfig, FailureConfig, FailureMode
+from planner.grasp_lock import GraspLock
 from planner.experiments.data_capture import (
     ContactExtractor,
     ContactPoint,
@@ -293,6 +294,7 @@ class ExperimentRunner:
         # Replay segments
         grip_ctrl = self.data.ctrl[7]  # starts open
         global_idx = 0
+        self._grasp_lock = GraspLock(self.model)
 
         for seg_info in dense_segments:
             dense = seg_info["dense"]
@@ -303,6 +305,7 @@ class ExperimentRunner:
                 self.data.ctrl[7] = grip_ctrl
                 for _ in range(config.steps_per_interp_point):
                     mujoco.mj_step(self.model, self.data)
+                    self._grasp_lock.update(self.data)
 
                 if global_idx == fail_at:
                     logger.info(
@@ -319,7 +322,9 @@ class ExperimentRunner:
                 self._close_gripper_headless(target_force=5000.0)
                 grip_ctrl = self.data.ctrl[7]
                 self._settle(200)
+                self._grasp_lock.attach(self.model, self.data, self._grasped_obj_name)
             elif action == "release":
+                self._grasp_lock.release(self.data)
                 self._open_gripper_headless()
                 grip_ctrl = self.data.ctrl[7]
                 self._settle(200)
@@ -374,6 +379,7 @@ class ExperimentRunner:
             contacts: List[ContactPoint] = []
             for _ in range(config.post_failure_settle_steps):
                 mujoco.mj_step(self.model, self.data)
+                self._grasp_lock.update(self.data)
                 step_contacts = self.contact_extractor.extract_contacts(
                     self.model, self.data, filter_target=False, min_force=1.0)
                 contacts.extend(step_contacts)
@@ -429,8 +435,10 @@ class ExperimentRunner:
         """Apply a single failure mode to the current simulation state."""
         mode = fc.mode
         if mode == FailureMode.GRIPPER_OPEN:
+            self._grasp_lock.release(self.data)
             self.data.ctrl[7] = 255.0
         elif mode == FailureMode.SLIPPERY_GRIP:
+            self._grasp_lock.release(self.data)
             self.data.ctrl[7] = fc.grip_value
         elif mode == FailureMode.SINGLE_JOINT:
             if fc.joint_names:

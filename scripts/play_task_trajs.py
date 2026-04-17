@@ -33,15 +33,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from planner.grasp_lock import GraspLock
 from planner.utils.trajectory_interpolation import interpolate_trajectory
-
-TASK_ORDER = [
-    "pick_place_nominal",
-    "pick_place_far",
-    "pick_place_cluttered",
-    "pick_alt_object",
-    "pick_and_stack",
-]
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -115,11 +108,19 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
             # Segmented format
             segments = entry.get("segments")
             if segments:
-                # Open gripper for approach
+                # Command the arm to the trajectory's starting config BEFORE
+                # settling so the arm doesn't swing toward zero-config (which
+                # can knock scene objects during the 200-step settle).
+                first_pt = np.asarray(segments[0]["trajectory"][0])
+                data.ctrl[:7] = first_pt[:7]
+                data.qpos[:7] = first_pt[:7]
+                data.qvel[:7] = 0.0
                 data.ctrl[7] = 255.0
+                mujoco.mj_forward(model, data)
                 for _ in range(200):
                     mujoco.mj_step(model, data)
                 grip_ctrl = data.ctrl[7]
+                lock = GraspLock(model)
 
                 for seg in segments:
                     seg_name = seg["name"]
@@ -141,12 +142,12 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
                         data.ctrl[7] = grip_ctrl
                         for _ in range(steps_per_point):
                             mujoco.mj_step(model, data)
+                            lock.update(data)
                         viewer.sync()
                         time.sleep(0.002 / max(speed, 0.1))
 
                     if action == "grasp":
                         print(" → GRASP", end="")
-                        # Gradual close
                         for step in range(30):
                             data.ctrl[7] = 255.0 * (1 - step / 30 * 0.95)
                             for _ in range(20):
@@ -154,13 +155,14 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
                             viewer.sync()
                             time.sleep(0.002)
                         grip_ctrl = data.ctrl[7]
-                        # Settle
                         for _ in range(300):
                             mujoco.mj_step(model, data)
                             viewer.sync()
                             time.sleep(0.001)
+                        lock.attach(model, data, grasped)
                     elif action == "release":
                         print(" → RELEASE", end="")
+                        lock.release(data)
                         data.ctrl[7] = 255.0
                         for _ in range(300):
                             mujoco.mj_step(model, data)
@@ -209,7 +211,6 @@ if __name__ == "__main__":
     group.add_argument("--scene", help="Play all trajectories for this scene")
 
     parser.add_argument("--task", default=None,
-                        choices=TASK_ORDER + [None],
                         help="Filter to a specific task (use with --scene)")
     parser.add_argument("--scene_xml", default=None,
                         help="Override scene XML path")

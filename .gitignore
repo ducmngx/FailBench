@@ -19,3 +19,6 @@ external/GraspGen/.venv/
 external/GraspGen/checkpoints/
 external/GraspGen/**/*.egg-info/
 external/GraspGen/**/__pycache__/
+
+# GraspGen precomputed grasps — regenerate via scripts/precompute_grasps.py
+cache/graspgen/

@@ -309,11 +309,31 @@ class PandaPickAndPlace:
         print("❌ RRT failed to reach any IK solution")
         return False
         
-    def plan_to_ee_pose(self, target_pos: np.ndarray, task_type: str,use_downward_constraint: bool = False) -> bool:
-        """Plan to end-effector pose using your IK + RRT."""
-        # print(f"🎯 Planning to EE Position: {target_pos}")
-        # Create target with optional orientation constraint
-        if use_downward_constraint:
+    def plan_to_ee_pose(self, target_pos: np.ndarray, task_type: str,
+                        use_downward_constraint: bool = False,
+                        target_quat_wxyz: Optional[np.ndarray] = None) -> bool:
+        """Plan to end-effector pose using your IK + RRT.
+
+        If ``target_quat_wxyz`` is provided, it takes precedence over
+        ``use_downward_constraint`` (both cannot be active simultaneously).
+        """
+        if target_quat_wxyz is not None:
+            try:
+                target = EndEffectorTarget(
+                    position=target_pos,
+                    orientation=np.asarray(target_quat_wxyz, dtype=float),
+                    frame_name="end_effector",
+                    frame_type="site",
+                )
+            except Exception as e:
+                print(f"   ❌ Error creating EndEffectorTarget with sampled quat: {e}")
+                target = EndEffectorTarget(
+                    position=target_pos,
+                    frame_name="end_effector",
+                    frame_type="site",
+                )
+            use_downward_constraint = True  # enables extra IK attempts + fallback path
+        elif use_downward_constraint:
             # print("   🔽 Using downward orientation constraint")
             # Create downward orientation quaternion [w, x, y, z]
             downward_rotation = R.from_euler('x', 180, degrees=True)
@@ -374,7 +394,11 @@ class PandaPickAndPlace:
         
         if not goal_configs:
             print("❌ No valid IK solutions found")
-            # If constrained planning failed, try unconstrained as fallback
+            # Never silently drop a sampled 6-DoF orientation — the caller will
+            # retry with a different grasp. For the analytic downward-constraint
+            # path, fall back to unconstrained so mission planning doesn't stall.
+            if target_quat_wxyz is not None:
+                return False
             if use_downward_constraint:
                 print("🔄 Trying fallback without orientation constraint...")
                 return self.plan_to_ee_pose(target_pos, task_type=task_type, use_downward_constraint=False)

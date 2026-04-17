@@ -1,0 +1,175 @@
+# Task definitions for scene_kitchen
+#
+# Table: x in [-0.60, 0.60], y in [-0.95, -0.20], top z = 0.760 m
+# Robot: panda_elevated.xml (base z = 0.38 m)
+#
+# Objects:
+#   object3 (cube, default pick):  (0.020, -0.505) — center of table, mid-depth
+#   obstacle_apple:                (-0.050, -0.430)
+#   obstacle_banana:               ( 0.140, -0.450)
+#   obstacle_coffeemug (sort pick):(-0.250, -0.400) — near-left, clear of neighbors for reliable grasp
+#   obstacle_alarmclock:           (-0.200, -0.540)
+#   obstacle_rubberduck:           ( 0.180, -0.550)
+#   obstacle_knife:                ( 0.050, -0.680)
+#   obstacle_bowl:                 (-0.100, -0.630)
+#
+# Clear zones (limited by robot workspace — far y > -0.75 is unreliable at x near 0):
+#   near edge (y ≈ -0.20 to -0.30): in front of object cluster
+#   far edge  (y ≈ -0.65 to -0.72): behind obstacle cluster (right-side reaches farther)
+#   left edge (x ≈ -0.45 to -0.58): left of cluster
+#   right edge(x ≈  0.30 to  0.55): right of cluster
+
+scene: scene_kitchen
+grasped_object: object3
+
+obstacles:
+  min_clearance: 0.08
+  centers:
+    - [-0.050, -0.430]
+    - [ 0.140, -0.450]
+    - [-0.250, -0.400]
+    - [-0.200, -0.540]
+    - [ 0.180, -0.550]
+    - [ 0.050, -0.680]
+    - [-0.100, -0.630]
+
+tasks:
+
+  # ── stack ──────────────────────────────────────────────────────────────────
+
+  stack_nominal:
+    category: stack
+    description: "Stack object3 on the alarm clock or rubber duck (mid-table)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.200, -0.540], [0.180, -0.550]]
+      jitter: 0.02
+
+  stack_far:
+    category: stack
+    description: "Stack object3 on the bowl or knife (far side of table)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.100, -0.630], [0.050, -0.680]]
+      jitter: 0.02
+
+  stack_over:
+    category: stack
+    description: "Stack object3 on far-side obstacle — maximum extension"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.100, -0.630], [0.180, -0.550]]
+      jitter: 0.015
+
+  # ── clean ──────────────────────────────────────────────────────────────────
+
+  clean_nominal:
+    category: clean
+    description: "Pick object3, drop on right side of table (short carry, clear of obstacles)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.28, 0.50], y: [-0.38, -0.58]}
+      check_clearance: true
+
+  clean_far:
+    category: clean
+    description: "Pick object3, drop in right-side far zone (long diagonal carry)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.22, 0.45], y: [-0.58, -0.72]}
+      check_clearance: true
+
+  clean_over:
+    category: clean
+    description: "Pick object3, drop on left side of table — crosses full obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.45, -0.30], y: [-0.35, -0.55]}
+      check_clearance: true
+
+  # ── sort ───────────────────────────────────────────────────────────────────
+
+  sort_nominal:
+    category: sort
+    description: "Pick coffee mug (near-left), deliver to right side of table"
+    grasped_object: obstacle_coffeemug
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.28, 0.50], y: [-0.38, -0.58]}
+      check_clearance: true
+
+  sort_far:
+    category: sort
+    description: "Pick coffee mug, deliver to right near-edge — long lateral carry from left pickup"
+    grasped_object: obstacle_coffeemug
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.50], y: [-0.22, -0.40]}
+      check_clearance: true
+
+  sort_over:
+    category: sort
+    description: "Pick coffee mug, carry to far zone — traverses full table depth"
+    grasped_object: obstacle_coffeemug
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.05, 0.30], y: [-0.58, -0.70]}
+      check_clearance: true
+
+  # ── handover ───────────────────────────────────────────────────────────────
+
+  handover_nominal:
+    category: handover
+    description: "Pick object3, carry to right table edge"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.35, 0.55], y: [-0.40, -0.60]}
+      check_clearance: true
+
+  handover_far:
+    category: handover
+    description: "Pick object3, carry to far-right zone — extended arm delivery"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.35, 0.55], y: [-0.58, -0.68]}
+      check_clearance: true
+
+  handover_over:
+    category: handover
+    description: "Pick object3, carry to left table edge — traverses full table width"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.45, -0.30], y: [-0.35, -0.55]}
+      check_clearance: true
+
+  pick_rubberduck:
+    category: pick
+    description: "Pick the rubber duck mesh (real object, 6-DoF GraspGen pose)"
+    grasped_object: obstacle_rubberduck
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.45], y: [-0.40, -0.55]}
+      check_clearance: true
