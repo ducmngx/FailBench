@@ -1,0 +1,190 @@
+# Task definitions for scene_cluttered
+#
+# Table: x in [-0.50, 0.50], y in [-0.84, -0.20], top z = 0.760 m
+# Robot: panda_elevated.xml (base z = 0.38 m)
+#
+# Objects (pickable): object3 slim box (18x18x80mm, green pen-like), at (0.01, -0.39)
+# Sort alt pick:      obstacle_smallbox (30x30x30mm, red cube), at (0.18, -0.66)
+#
+# Obstacles (11 total, mixed mesh + primitive):
+#   obstacle_phone       mesh    (-0.10, -0.36)
+#   obstacle_mouse       mesh    ( 0.15, -0.38)
+#   obstacle_toothbrush  mesh    (-0.18, -0.48)
+#   obstacle_stamp       mesh    ( 0.12, -0.56)
+#   obstacle_camera      mesh    (-0.05, -0.60)
+#   obstacle_rubberduck  mesh    ( 0.20, -0.54)
+#   obstacle_alarmclock  mesh    (-0.20, -0.38)
+#   obstacle_tape        cyl     ( 0.07, -0.43)
+#   obstacle_eraser      box     (-0.08, -0.66)
+#   obstacle_smallbox    box     ( 0.18, -0.66)   — also sort_* pick
+#   obstacle_coin        cyl     (-0.16, -0.64)
+#
+# Clear zones (identified by inspection, avoiding all 11 obstacles + object3):
+#   near-right edge:  x in [ 0.25,  0.48], y in [-0.22, -0.32]
+#   near-left edge:   x in [-0.45, -0.28], y in [-0.22, -0.32]
+#   far-mid strip:    x in [-0.10,  0.10], y in [-0.76, -0.82]
+#   far-left corner:  x in [-0.45, -0.28], y in [-0.74, -0.82]
+#   right-edge mid:   x in [ 0.30,  0.48], y in [-0.42, -0.55]
+#   left-edge mid:    x in [-0.48, -0.30], y in [-0.42, -0.55]
+
+scene: scene_cluttered
+grasped_object: object3
+
+obstacles:
+  min_clearance: 0.06
+  centers:
+    - [-0.10, -0.36]
+    - [ 0.15, -0.38]
+    - [-0.18, -0.48]
+    - [ 0.12, -0.56]
+    - [-0.05, -0.60]
+    - [ 0.20, -0.54]
+    - [-0.20, -0.38]
+    - [ 0.07, -0.43]
+    - [-0.08, -0.66]
+    - [ 0.18, -0.66]
+    - [-0.16, -0.64]
+
+tasks:
+
+  # ── stack ──────────────────────────────────────────────────────────────────
+  # Pick object3, stack on top of an obstacle (elevated goal z = on_target).
+  # Target obstacles with roughly flat tops that can hold an 18mm square base.
+
+  stack_nominal:
+    category: stack
+    description: "Stack object3 on near-row obstacle (phone or alarmclock)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.10, -0.36], [-0.20, -0.38]]
+      jitter: 0.015
+
+  stack_far:
+    category: stack
+    description: "Stack object3 on far-row obstacle (camera or rubberduck) — longer carry"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.05, -0.60], [0.20, -0.54]]
+      jitter: 0.015
+
+  stack_over:
+    category: stack
+    description: "Stack object3 on far-edge obstacle (smallbox or eraser) — cross-table reach"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[0.18, -0.66], [-0.08, -0.66]]
+      jitter: 0.015
+
+  # ── clean ──────────────────────────────────────────────────────────────────
+  # Pick object3, carry to a designated clear drop zone (table surface).
+
+  clean_nominal:
+    category: clean
+    description: "Pick object3, drop in near-right clear zone (short carry)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.25, 0.48], y: [-0.22, -0.32]}
+      check_clearance: true
+
+  clean_far:
+    category: clean
+    description: "Pick object3, drop in far-mid clear zone (long carry past obstacle field)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.10, 0.10], y: [-0.70, -0.73]}
+      check_clearance: true
+
+  clean_over:
+    category: clean
+    description: "Pick object3, drop on left-side zone — traverse obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.42, -0.30], y: [-0.55, -0.65]}
+      check_clearance: true
+
+  # ── sort ───────────────────────────────────────────────────────────────────
+  # Pick the alternate red cube (obstacle_smallbox), deliver to a zone.
+
+  # sort_* disabled: all candidate alt-pick primitives (smallbox, eraser) sit in
+  # the far row y≈-0.66 and hit the elevated Panda's workspace limit on lift
+  # (obj_z reaches ~0.878 vs required ~0.890). Moving the pick would require
+  # editing scene.xml — out of scope for this task. Re-enable if we add a
+  # primitive alt-pick in the near row.
+
+  sort_nominal:
+    enabled: false
+    category: sort
+    description: "Pick smallbox (far-right), deliver to near-left zone"
+    grasped_object: obstacle_smallbox
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.45, -0.28], y: [-0.22, -0.32]}
+      check_clearance: true
+
+  sort_far:
+    enabled: false
+    category: sort
+    description: "Pick smallbox, deliver to right-mid edge — long lateral carry"
+    grasped_object: obstacle_smallbox
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.48], y: [-0.42, -0.55]}
+      check_clearance: true
+
+  sort_over:
+    enabled: false
+    category: sort
+    description: "Pick smallbox, deliver to near-right zone — cross-table lateral"
+    grasped_object: obstacle_smallbox
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.25, 0.48], y: [-0.22, -0.32]}
+      check_clearance: true
+
+  # ── handover ───────────────────────────────────────────────────────────────
+  # Pick object3, carry to a table-edge zone (simulated handover).
+
+  handover_nominal:
+    category: handover
+    description: "Pick object3, carry to right-edge mid-table (natural reach)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.48], y: [-0.42, -0.55]}
+      check_clearance: true
+
+  handover_far:
+    category: handover
+    description: "Pick object3, carry to far-right corner — extended arm delivery"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.48], y: [-0.58, -0.72]}
+      check_clearance: true
+
+  handover_over:
+    category: handover
+    description: "Pick object3, carry to left-edge — must traverse full obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.48, -0.30], y: [-0.42, -0.55]}
+      check_clearance: true
