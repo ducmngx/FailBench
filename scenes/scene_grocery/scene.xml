@@ -6,7 +6,7 @@
                   gelatin, master-chef-can, tuna-can, potted-meat-can)
     Grasped object3: slim yellow box (cracker-box style, thin dimension graspable)
   -->
-  <size nconmax="500" njmax="2000"/>
+  <size nconmax="1000" njmax="4000" nstack="3000000"/>
   <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
           iterations="30" ls_iterations="10" noslip_tolerance="1e-6"/>
   <option noslip_iterations="3"><flag multiccd="enable" gravity="enable"/></option>
@@ -63,22 +63,29 @@
       <geom type="box" size="0.025 0.025 0.305" pos="-0.565 -0.235 0.305" material="study_wood"/>
       <geom type="box" size="0.025 0.025 0.305" pos=" 0.565  0.235 0.305" material="study_wood"/>
       <geom type="box" size="0.025 0.025 0.305" pos=" 0.565 -0.235 0.305" material="study_wood"/>
-      <!-- Back shelf (local +y → world -y after rotation → faces away from robot) -->
-      <geom type="box" size="0.600 0.010 0.175" pos="0 0.265 0.935" material="study_wood"/>
-      <geom type="box" size="0.600 0.110 0.010" pos="0 0.165 1.100" material="study_wood"
+      <!-- Right-side wall (lower, so the top shelf is within arm reach).
+           Local -x → world +x after 180° body rotation. -->
+      <geom type="box" size="0.010 0.275 0.100" pos="-0.585 0 0.860" material="study_wood"
             contype="1" conaffinity="1"/>
+      <!-- Top shelf: 0.25m long × 0.55m deep (matches tabletop's small dim in y).
+           Spans full table depth along the right-side wall. Named so the height
+           derivation in generate_task_trajs.py can look up its top z. -->
+      <geom name="top_shelf_geom" type="box" size="0.125 0.275 0.005" pos="-0.460 0 0.965"
+            material="study_wood" contype="1" conaffinity="1"/>
     </body>
 
-    <!-- object3: slim box (cracker-box style, yellow), 0.022 m thin → fits 4 cm gripper -->
-    <body name="object3" pos="0.02 -0.375 0.790">
+    <!-- object3: slim box (cracker-box style, yellow), 0.022 m thin → fits 4 cm gripper.
+         Positioned in the mid-table strip with only medium-height YCBs in its
+         30cm neighborhood (mustard + crackers relocated to the back row). -->
+    <body name="object3" pos="0.02 -0.400 0.790">
       <joint name="object3_joint" type="free"/>
       <geom name="object3_geom" type="box" size="0.022 0.030 0.022"
             rgba="0.90 0.65 0.10 1" solimp="0.015 1 0.02" solref="0.005 1"
             condim="6" friction="2.5 1.0 0.01"/>
     </body>
 
-    <!-- mustard bottle (yellow, tall ~19 cm, YCB 006) -->
-    <body name="obstacle_mustard" pos="-0.18 -0.330 0.860">
+    <!-- mustard bottle (yellow, tall ~19 cm, YCB 006) — moved to back-left corner -->
+    <body name="obstacle_mustard" pos="-0.50 -0.680 0.860">
       <joint name="obstacle_mustard_joint" type="free"/>
       <geom class="ycb_viz" mesh="ycb_mustard" rgba="0.96 0.82 0.06 1"/>
       <geom class="ycb_col" type="mesh" mesh="ycb_mustard" mass="0.431"/>
@@ -91,8 +98,9 @@
       <geom class="ycb_col" type="mesh" mesh="ycb_soup" mass="0.349"/>
     </body>
 
-    <!-- cracker box (tan/brown, tall ~21 cm, YCB 003) -->
-    <body name="obstacle_crackers" pos="0.14 -0.320 0.870">
+    <!-- cracker box (tan/brown, tall ~21 cm, YCB 003) — moved to back-center so
+         its 21cm height doesn't penetrate the right-side top shelf at x∈[0.335, 0.585]. -->
+    <body name="obstacle_crackers" pos="0.00 -0.700 0.870">
       <joint name="obstacle_crackers_joint" type="free"/>
       <geom class="ycb_viz" mesh="ycb_crackers" rgba="0.82 0.65 0.30 1"/>
       <geom class="ycb_col" type="mesh" mesh="ycb_crackers" mass="0.411"/>

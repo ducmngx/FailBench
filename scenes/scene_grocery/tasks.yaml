@@ -1,0 +1,181 @@
+# Task definitions for scene_grocery
+#
+# Table: x in [-0.60, 0.60], y in [-0.75, -0.20], top z = 0.760 m
+# Robot: panda_elevated.xml (base z = 0.38 m)
+# Scene additions vs other scenes:
+#   right-side wall at world x=+0.58 (full y depth, z ∈ [0.76, 0.96])
+#   top shelf       at world x ∈ [+0.335, +0.585], z ≈ 0.97 (reachable strip along near edge)
+#
+# Objects:
+#   object3 (yellow cracker-style box, default pick):  (0.02, -0.375)
+#
+# YCB mesh obstacles (positions):
+#   obstacle_mustard    (-0.18, -0.330)   tall (~19 cm)
+#   obstacle_soup       (-0.04, -0.340)   medium (~10 cm)
+#   obstacle_crackers   ( 0.14, -0.320)   tall (~21 cm)
+#   obstacle_sugar      (-0.20, -0.520)   tall (~18 cm)
+#   obstacle_gelatin    ( 0.08, -0.570)   short (~8 cm)
+#   obstacle_chefcan    ( 0.20, -0.460)   medium (~14 cm)
+#   obstacle_tunacan    (-0.08, -0.620)   very flat (~3 cm)
+#   obstacle_meatcan    ( 0.18, -0.640)   short (~8 cm)
+#
+# Derived obstacles (new scenery):
+#   right wall          ( 0.58, -0.475)   full y depth
+#   top shelf (near)    ( 0.46, -0.475)   reach-near edge
+#
+# Clear zones (identified by inspection):
+#   near-edge left:   x in [-0.40, -0.25], y in [-0.21, -0.28]
+#   near-edge right:  ... blocked by wall-side mustard/crackers/chefcan cluster, so use
+#                     left-mid-near instead
+#   far-edge mid:     x in [-0.10,  0.05], y in [-0.68, -0.73]
+#   left-edge strip:  x in [-0.50, -0.35], y in [-0.30, -0.55]
+
+scene: scene_grocery
+grasped_object: object3
+
+obstacles:
+  min_clearance: 0.06
+  centers:
+    - [-0.50, -0.68]    # mustard (relocated to back-left)
+    - [-0.04, -0.34]    # soup
+    - [ 0.00, -0.70]    # crackers (relocated to back-center, clear of shelf)
+    - [-0.20, -0.52]    # sugar
+    - [ 0.08, -0.57]    # gelatin
+    - [ 0.20, -0.46]    # chefcan
+    - [-0.08, -0.62]    # tunacan
+    - [ 0.18, -0.64]    # meatcan
+    - [ 0.58, -0.475]   # right-side wall (center)
+    - [ 0.46, -0.475]   # top shelf near edge
+
+tasks:
+
+  # ── stack ──────────────────────────────────────────────────────────────────
+  # Pick object3, place on top of a YCB obstacle (place_height: on_target).
+
+  stack_nominal:
+    category: stack
+    description: "Stack object3 on a medium near-table obstacle (soup or chefcan)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.04, -0.34], [0.20, -0.46]]
+      jitter: 0.015
+
+  stack_far:
+    category: stack
+    description: "Stack object3 on a far-row obstacle (sugar or meatcan)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.20, -0.52], [0.18, -0.64]]
+      jitter: 0.015
+
+  stack_over:
+    category: stack
+    description: "Stack object3 on a short far-row obstacle (gelatin or tunacan)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[0.08, -0.57], [-0.08, -0.62]]
+      jitter: 0.015
+
+  # ── clean ──────────────────────────────────────────────────────────────────
+  # Pick object3, drop in a clear zone on the table surface.
+
+  clean_nominal:
+    category: clean
+    description: "Pick object3, drop in near-left clear zone (short diagonal)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.40, -0.25], y: [-0.22, -0.28]}
+      check_clearance: true
+
+  clean_far:
+    category: clean
+    description: "Pick object3, drop in far-mid clear zone (long carry past YCB field)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.10, 0.05], y: [-0.68, -0.73]}
+      check_clearance: true
+
+  clean_over:
+    category: clean
+    description: "Pick object3, drop on left-edge strip — traverses full obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.50, -0.35], y: [-0.30, -0.55]}
+      check_clearance: true
+
+  # ── shelf ──────────────────────────────────────────────────────────────────
+  # Pick object3, place on top shelf (place_height: on_shelf, z≈0.97).
+  # Reachable strip: x ∈ [0.33, 0.40], y ∈ [-0.40, -0.55].
+
+  shelf_nominal:
+    category: shelf
+    description: "Pick object3, place on top shelf (center-near position)"
+    place_height: on_shelf
+    goal:
+      type: zones
+      zones:
+        - {x: [0.33, 0.40], y: [-0.44, -0.50]}
+      check_clearance: false
+
+  shelf_far:
+    category: shelf
+    description: "Pick object3, place on top shelf (far-y edge)"
+    place_height: on_shelf
+    goal:
+      type: zones
+      zones:
+        - {x: [0.33, 0.40], y: [-0.52, -0.57]}
+      check_clearance: false
+
+  shelf_over:
+    category: shelf
+    description: "Pick object3, place on top shelf (near-y edge)"
+    place_height: on_shelf
+    goal:
+      type: zones
+      zones:
+        - {x: [0.33, 0.40], y: [-0.38, -0.43]}
+      check_clearance: false
+
+  # ── handover ───────────────────────────────────────────────────────────────
+  # Pick object3, carry to table-edge. Right-edge goals capped at x ≤ 0.40 to
+  # clear the new right-side wall at x=+0.58.
+
+  handover_nominal:
+    category: handover
+    description: "Pick object3, carry to right-mid edge (wall-clearance safe)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.28, 0.40], y: [-0.40, -0.55]}
+      check_clearance: true
+
+  handover_far:
+    category: handover
+    description: "Pick object3, carry to far-right-corner (wall-adjacent, longer reach)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.28, 0.40], y: [-0.58, -0.68]}
+      check_clearance: true
+
+  handover_over:
+    category: handover
+    description: "Pick object3, carry to left edge — traverses full obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.50, -0.35], y: [-0.40, -0.55]}
+      check_clearance: true
