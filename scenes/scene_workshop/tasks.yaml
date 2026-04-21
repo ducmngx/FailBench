@@ -1,0 +1,177 @@
+# Task definitions for scene_workshop
+#
+# Table: x in [-0.612, 0.612], y in [-1.019, -0.201], top z ≈ 0.824 m
+# Robot: panda_elevated.xml (base z = 0.38 m)
+#
+# Objects (pickable):
+#   object3 (thin blue cylinder, r=13mm, h=150mm, upright):  (0.02, -0.540)
+#   sort alt pick: obstacle_pliers (box 36×180×40mm):        (-0.18, -0.750)
+#
+# Obstacles (6 total, mixed mesh + primitive):
+#   obstacle_hammer      mesh    (-0.05, -0.620)   lying on side
+#   obstacle_flashlight  mesh    ( 0.16, -0.480)   lying on side
+#   obstacle_stapler     mesh    (-0.17, -0.450)   upright
+#   obstacle_wrench      box     ( 0.08, -0.740)   flat bar
+#   obstacle_bolt        cyl     ( 0.20, -0.600)   small side cylinder
+#   obstacle_pliers      box     (-0.18, -0.750)   elongated
+#
+# Clear zones (identified by inspection, avoiding all 6 obstacles + object3):
+#   near-right edge: x in [ 0.30,  0.50], y in [-0.25, -0.40]
+#   near-left edge:  x in [-0.45, -0.30], y in [-0.25, -0.40]
+#   far-right edge:  x in [ 0.30,  0.48], y in [-0.72, -0.85]
+#   far-left corner: x in [-0.45, -0.30], y in [-0.55, -0.72]
+#   right-edge mid:  x in [ 0.35,  0.50], y in [-0.42, -0.55]
+#   left-edge mid:   x in [-0.45, -0.30], y in [-0.42, -0.55]
+
+scene: scene_workshop
+grasped_object: object3
+
+obstacles:
+  min_clearance: 0.08
+  centers:
+    - [-0.05, -0.620]   # hammer
+    - [ 0.16, -0.480]   # flashlight
+    - [-0.17, -0.450]   # stapler
+    - [ 0.08, -0.740]   # wrench
+    - [ 0.20, -0.600]   # bolt
+    - [-0.18, -0.750]   # pliers
+
+tasks:
+
+  # ── stack ──────────────────────────────────────────────────────────────────
+  # Pick object3 (cylinder), stack on top of obstacle (place_height: on_target).
+
+  stack_nominal:
+    category: stack
+    description: "Stack object3 on near-row obstacle (flashlight) — flat top"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[0.16, -0.480]]
+      jitter: 0.015
+
+  stack_far:
+    category: stack
+    description: "Stack object3 on mid-far obstacle (wrench or bolt)"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[0.08, -0.740], [0.20, -0.600]]
+      jitter: 0.015
+
+  stack_over:
+    category: stack
+    description: "Stack object3 on mesh obstacle (stapler or hammer) — irregular top"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.17, -0.450], [-0.05, -0.620]]
+      jitter: 0.015
+
+  # ── clean ──────────────────────────────────────────────────────────────────
+  # Pick object3, drop in a clear drop zone (table surface).
+
+  clean_nominal:
+    category: clean
+    description: "Pick object3, drop in near-right clear zone (short carry)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.50], y: [-0.25, -0.40]}
+      check_clearance: true
+
+  clean_far:
+    category: clean
+    description: "Pick object3, drop in right-far clear zone (long diagonal carry)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.45], y: [-0.65, -0.75]}
+      check_clearance: true
+
+  clean_over:
+    category: clean
+    description: "Pick object3, drop on far-left — traverse obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.42, -0.28], y: [-0.52, -0.65]}
+      check_clearance: true
+
+  # ── handover ───────────────────────────────────────────────────────────────
+  # Pick object3, carry to a table-edge zone (simulated handover).
+
+  handover_nominal:
+    category: handover
+    description: "Pick object3, carry to right-mid edge (natural reach)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.35, 0.50], y: [-0.42, -0.55]}
+      check_clearance: true
+
+  handover_far:
+    category: handover
+    description: "Pick object3, carry to right-far zone — extended arm delivery"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.35, 0.48], y: [-0.55, -0.68]}
+      check_clearance: true
+
+  handover_over:
+    category: handover
+    description: "Pick object3, carry to left-edge — traverse obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.45, -0.30], y: [-0.42, -0.55]}
+      check_clearance: true
+
+  # ── sort ───────────────────────────────────────────────────────────────────
+  # sort_* disabled by default: the alt-pick (pliers) sits at the far-y row
+  # (-0.75) which runs into the same workspace-edge lift limit as scene_cluttered's
+  # smallbox. Left in the scaffold for future re-enable if we add a near-row
+  # primitive alt-pick.
+
+  sort_nominal:
+    enabled: false
+    category: sort
+    description: "Pick pliers (far-left), deliver to near-right zone"
+    grasped_object: obstacle_pliers
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.50], y: [-0.25, -0.40]}
+      check_clearance: true
+
+  sort_far:
+    enabled: false
+    category: sort
+    description: "Pick pliers, deliver to right-mid edge — long lateral carry"
+    grasped_object: obstacle_pliers
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.35, 0.50], y: [-0.42, -0.55]}
+      check_clearance: true
+
+  sort_over:
+    enabled: false
+    category: sort
+    description: "Pick pliers, deliver to far-right — cross-table reach"
+    grasped_object: obstacle_pliers
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.30, 0.48], y: [-0.72, -0.85]}
+      check_clearance: true

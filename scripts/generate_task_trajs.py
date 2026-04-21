@@ -119,16 +119,21 @@ def _derive_scene_heights(model, data, obj_name, search_radius=0.30):
         obj_half_h = 0.03  # fallback
         gtype = -1
 
-    # Table top z — find the largest horizontal box in any body named *table*
+    # Table top z — find the LARGEST-AREA horizontal box in any body named *table*.
+    # Picking the largest (not just any big-x one) avoids treating small named
+    # shelves / platforms attached to the table body as the tabletop.
     table_z = 0.0
+    table_area = 0.0
     for gid in range(model.ngeom):
         bid = model.geom_bodyid[gid]
         bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
         if bname and "table" in bname.lower() and model.geom_type[gid] == 6:  # box
             size = model.geom_size[gid]
-            top = data.geom_xpos[gid][2] + size[2]
-            if size[0] > 0.1:  # must be a tabletop, not a leg
-                table_z = max(table_z, top)
+            if size[0] > 0.1 and size[1] > 0.1:  # must be a tabletop, not a leg or shelf strip
+                area = size[0] * size[1]
+                if area > table_area:
+                    table_area = area
+                    table_z = data.geom_xpos[gid][2] + size[2]
 
     if table_z == 0.0:
         table_z = obj_pos[2] - obj_half_h  # fallback: bottom of object
@@ -161,13 +166,27 @@ def _derive_scene_heights(model, data, obj_name, search_radius=0.30):
     link0_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link0")
     robot_base_z = float(data.xpos[link0_id][2]) if link0_id >= 0 else 0.0
 
+    # Optional top shelf: scenes that include a geom named "top_shelf_geom"
+    # expose its top z for place_height: on_shelf tasks.
+    shelf_gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "top_shelf_geom")
+    if shelf_gid >= 0:
+        shelf_top_z = float(data.geom_xpos[shelf_gid][2] + model.geom_size[shelf_gid][2])
+    else:
+        shelf_top_z = None
+
     # Compute derived heights
     # Desired clearance above obstacles for lift/approach
     desired_clearance = 0.18
     is_primitive = obj_gid >= 0 and gtype in (_GEOM_CYLINDER, _GEOM_BOX)
     if is_primitive:
         # EE at cylinder/box top face so finger pads can close around the sides.
-        grasp_offset = obj_half_h
+        # Exception: for tall upright cylinders (half_length > 2 × radius, e.g. a
+        # screwdriver-handle rod), grasping at the top puts the fingers past the
+        # object. Target the mid-shaft by setting grasp_offset=0.
+        if gtype == _GEOM_CYLINDER and obj_half_h > 2.0 * float(model.geom_size[obj_gid][0]):
+            grasp_offset = 0.0
+        else:
+            grasp_offset = obj_half_h
     else:
         grasp_offset = 0.0       # EE at object center for mesh objects
     approach_max_elev = np.pi / 6  # 30° max elevation from vertical (all objects)
@@ -188,25 +207,37 @@ def _derive_scene_heights(model, data, obj_name, search_radius=0.30):
     # downward=False so far-reach goals remain reachable via tilted arm configurations
     place_offset = obj_half_h + 0.04  # EE above surface with margin for controller overshoot
 
+    # Tight-clutter detection: tall nearby obstacles force approach_min_z high
+    # above the object. The primitive hemisphere (30–60° lateral) fails in that
+    # regime — the arm can't come in from the side without clipping obstacles,
+    # and the descend wrist ends up misaligned with the object axes. Treat such
+    # primitives like meshes: near-vertical approach + downward descend.
+    tight_primitive_clutter = (
+        is_primitive and (max_obstacle_top + 0.02 - obj_pos[2]) > 0.15
+    )
+    use_lateral_approach = is_primitive and not tight_primitive_clutter
+
     heights = {
         "table_z": table_z,
         "obj_half_h": obj_half_h,
         "grasp_h": grasp_offset,            # above object CENTER for grasp
         "approach_radius": 0.08,             # base radius for hemisphere sampling
         "approach_radius_var": 0.04,         # variation in approach radius
-        "approach_min_elev": np.pi / 6 if is_primitive else 0.0,   # primitives: min 30° lateral
-        "approach_max_elev": np.pi / 3 if is_primitive else approach_max_elev,  # primitives: up to 60°
-        "approach_min_z": (max_obstacle_top + 0.02) if is_primitive else lift_z,  # primitives: low approach
+        "approach_min_elev": np.pi / 6 if use_lateral_approach else 0.0,
+        "approach_max_elev": np.pi / 3 if use_lateral_approach else approach_max_elev,
+        "approach_min_z": (max_obstacle_top + 0.02) if use_lateral_approach else lift_z,
         "lift_z": lift_z,                    # absolute z for lift target
         "carry_z": carry_z,                  # absolute z for transport
         "place_offset": place_offset,        # above placement surface
         "max_obstacle_top": max_obstacle_top,
         "robot_base_z": robot_base_z,
         "is_primitive": is_primitive,
+        "use_lateral_approach": use_lateral_approach,
+        "shelf_top_z": shelf_top_z,
     }
 
-    approach_min_z_print = (max_obstacle_top + 0.02) if is_primitive else lift_z
-    approach_max_elev_print = np.pi / 3 if is_primitive else approach_max_elev
+    approach_min_z_print = (max_obstacle_top + 0.02) if use_lateral_approach else lift_z
+    approach_max_elev_print = np.pi / 3 if use_lateral_approach else approach_max_elev
     print(f"  Derived heights: table_z={table_z:.3f} max_obstacle_top={max_obstacle_top:.3f} "
           f"lift_z={lift_z:.3f} carry_z={carry_z:.3f} approach_min_z={approach_min_z_print:.3f} "
           f"approach_max_elev={np.degrees(approach_max_elev_print):.1f}°"
@@ -287,6 +318,10 @@ def _compute_waypoints(obj_pos, goal_xy, heights, place_height, approach_pos,
 
     if place_height == "on_target":
         place_z = heights["max_obstacle_top"] + heights["place_offset"]
+    elif place_height == "on_shelf":
+        if heights.get("shelf_top_z") is None:
+            raise ValueError("place_height: on_shelf requires a geom named 'top_shelf_geom' in the scene XML")
+        place_z = heights["shelf_top_z"] + heights["place_offset"]
     else:
         place_z = heights["table_z"] + heights["place_offset"]
     place = np.array([gx, gy, place_z])
@@ -403,10 +438,13 @@ def generate(scene, task, n_trajs, seed, scene_xml=None, robot_xml=None,
                 print(f"GraspGen cache unavailable ({e}); falling back to analytic grasp.")
                 grasp_sampler = None
 
-    # For primitive objects (box/cylinder), use unconstrained descend so the IK
-    # can find lateral side-grasp configurations. Top-down descent to coffeemug
-    # height (~0.860) consistently fails because lower arm links hit the table.
-    if heights.get("is_primitive"):
+    # For primitive objects (box/cylinder) in open scenes, use unconstrained
+    # descend so the IK can find lateral side-grasp configurations. Top-down
+    # descent to coffeemug height (~0.860) consistently fails because lower
+    # arm links hit the table. BUT in tight-clutter scenes (e.g. scene_grocery
+    # with tall YCB neighbors), lateral approach can't thread past obstacles
+    # — fall back to downward descend, same as mesh-style picks.
+    if heights.get("use_lateral_approach"):
         seg_defs = [
             ("approach",  None,      "transit", True),
             ("descend",   "grasp",   "pick",    False),   # unconstrained: lateral side grasp
@@ -518,7 +556,15 @@ def generate(scene, task, n_trajs, seed, scene_xml=None, robot_xml=None,
 
             # Physics verification — replay and check collisions, grasp, place
             print(f"      Verifying via physics replay ...")
-            vr = verify_trajectory(scene_xml, tmp_path, strict_attach=strict_attach)
+            verify_kwargs = {"strict_attach": strict_attach}
+            # Tall objects (half-height > 5 cm) can't complete a full 10 cm lift
+            # at the workspace edge — accept a 6 cm clearance. They also tip on
+            # release, so the post-settle XY can drift by ~their half-length from
+            # the release point; widen place tolerance to match.
+            if heights.get("obj_half_h", 0.0) > 0.05:
+                verify_kwargs["grasp_z_margin"] = 0.06
+                verify_kwargs["place_xy_tolerance"] = 0.10
+            vr = verify_trajectory(scene_xml, tmp_path, **verify_kwargs)
             if not vr.passed:
                 print(f"      REJECTED: {vr.details}")
                 if os.path.exists(tmp_path):

@@ -5,7 +5,7 @@
     Mesh objects: hammer, flashlight, stapler
     Primitive obstacles: wrench (box), bolt (cylinder), pliers (box)
   -->
-  <size nconmax="600" njmax="2500"/>
+  <size nconmax="1000" njmax="4000" nstack="3000000"/>
   <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
           iterations="30" ls_iterations="10" noslip_tolerance="1e-6"/>
   <option noslip_iterations="3"><flag multiccd="enable" gravity="enable"/></option>
@@ -91,7 +91,7 @@
     </body>
 
     <!-- flashlight (bright orange, lying on side) -->
-    <body name="obstacle_flashlight" pos="0.16 -0.480 0.835">
+    <body name="obstacle_flashlight" pos="0.16 -0.480 0.865">
       <joint name="obstacle_flashlight_joint" type="free"/>
       <geom class="obj_viz" mesh="flashlight" rgba="0.95 0.55 0.05 1"/>
       <geom class="obj_col" mesh="flashlight_c0"/>
