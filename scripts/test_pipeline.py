@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 SCENE = "scene_level2"
 SCENE_XML = "scenes/scene_level2/scene.xml"
-TASK = "pick_place_nominal"
+TASK = "clean_nominal"
 
 # ---------------------------------------------------------------------------
 # 1. Generate one trajectory

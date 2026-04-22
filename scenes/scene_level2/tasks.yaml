@@ -1,0 +1,170 @@
+# Task definitions for scene_level2
+#
+# Table: x in [-0.30, 0.30], y in [-0.19, -0.51], top z = 0.40 m
+# 8 objects total (2 pickable + 6 obstacles), ≥0.15m spacing around pick targets
+#
+# object3 (green, default pick): (0.22, -0.24) — front-right edge
+# object1 (blue, sort pick):     (-0.22, -0.47) — back-left edge
+#
+# Obstacles:
+#   soft1 (-0.08, -0.27)  soft2 (0.06, -0.27)    — near row, yellow
+#   hard1 (-0.12, -0.36)  hard2 (0.12, -0.36)    — mid row, red (stack targets)
+#   soft3 (0.02, -0.47)   hard3 (0.18, -0.47)    — far row, mixed (hard3 = stack target)
+#
+# Semantic categories:
+#   stack    — pick object3, place on top of an existing obstacle
+#   clean    — pick object3, carry to a designated drop zone on the table
+#   sort     — pick object1 (alt object), deliver to a specific zone
+#   handover — pick object3, carry to table edge (simulating handover to human)
+#
+# Geometric subtasks:
+#   _nominal — short carry, open space
+#   _far     — long carry, arm extended at delivery
+#   _over    — goal on far side of obstacle field, requires cross-table traverse
+
+scene: scene_level2
+grasped_object: object3
+
+obstacles:
+  min_clearance: 0.06
+  centers:
+    - [-0.08, -0.27]
+    - [ 0.06, -0.27]
+    - [-0.12, -0.36]
+    - [ 0.12, -0.36]
+    - [ 0.02, -0.47]
+    - [ 0.18, -0.47]
+
+tasks:
+
+  # ── stack ──────────────────────────────────────────────────────────────────
+  # Pick object3, place on top of an obstacle (elevated goal z = on_target).
+
+  stack_nominal:
+    category: stack
+    description: "Stack object3 on a mid-row hard obstacle"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.12, -0.36], [0.12, -0.36]]
+      jitter: 0.02
+
+  stack_far:
+    category: stack
+    description: "Stack object3 on a far-row obstacle — longer carry"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[0.02, -0.47], [0.18, -0.47]]
+      jitter: 0.02
+
+  stack_over:
+    category: stack
+    description: "Stack object3 on a cross-table obstacle — maximum arm extension"
+    place_height: on_target
+    goal:
+      type: choice
+      targets: [[-0.12, -0.36], [0.18, -0.47]]
+      jitter: 0.015
+
+  # ── clean ──────────────────────────────────────────────────────────────────
+  # Pick object3, carry to a designated clear drop zone (table surface).
+
+  clean_nominal:
+    category: clean
+    description: "Pick object3, drop in near-edge clear zone (short carry)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.20, 0.15], y: [-0.19, -0.22]}
+      check_clearance: true
+
+  clean_far:
+    category: clean
+    description: "Pick object3, drop in far-edge clear zone (long carry over obstacles)"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.15, 0.20], y: [-0.48, -0.51]}
+      check_clearance: true
+
+  clean_over:
+    category: clean
+    description: "Pick object3, drop in far-left zone — crosses full obstacle field"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.27, -0.20], y: [-0.42, -0.50]}
+      check_clearance: true
+
+  # ── sort ───────────────────────────────────────────────────────────────────
+  # Pick object1 (blue, back-left), deliver to a specified delivery zone.
+
+  sort_nominal:
+    category: sort
+    description: "Pick object1 (back-left), deliver to right-near zone"
+    grasped_object: object1
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.23, 0.30], y: [-0.22, -0.35]}
+      check_clearance: true
+
+  sort_far:
+    category: sort
+    description: "Pick object1, deliver to far-right zone — long diagonal carry"
+    grasped_object: object1
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.23, 0.30], y: [-0.40, -0.50]}
+      check_clearance: true
+
+  sort_over:
+    category: sort
+    description: "Pick object1, deliver to near front zone — carries over full obstacle field"
+    grasped_object: object1
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.15, 0.15], y: [-0.19, -0.22]}
+      check_clearance: true
+
+  # ── handover ───────────────────────────────────────────────────────────────
+  # Pick object3, carry to table edge (simulating handover to a human or bin).
+
+  handover_nominal:
+    category: handover
+    description: "Pick object3, carry to right table edge — natural reach direction"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.23, 0.30], y: [-0.22, -0.40]}
+      check_clearance: true
+
+  handover_far:
+    category: handover
+    description: "Pick object3, carry to far-right corner — maximum arm extension"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [0.25, 0.30], y: [-0.42, -0.50]}
+      check_clearance: true
+
+  handover_over:
+    category: handover
+    description: "Pick object3, carry to left table edge — must traverse past obstacles"
+    place_height: table_surface
+    goal:
+      type: zones
+      zones:
+        - {x: [-0.27, -0.20], y: [-0.22, -0.42]}
+      check_clearance: true

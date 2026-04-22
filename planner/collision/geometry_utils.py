@@ -50,13 +50,14 @@ class EnhancedXMLSeparator:
             'joints': set()
         }
         
-        # Get robot body names
+        # Get robot body names (exclude 'world' — the root body is shared with the scene,
+        # so including it would misclassify floor/pedestal geoms as robot geoms)
         for body_id in range(self.robot_model.nbody):
             body_name = mujoco.mj_id2name(self.robot_model, mujoco.mjtObj.mjOBJ_BODY, body_id)
-            
-            if body_name:
+
+            if body_name and body_name != 'world':
                 names['bodies'].add(body_name)
-        
+
         # Get robot geom names
         for geom_id in range(self.robot_model.ngeom):
             geom_name = mujoco.mj_id2name(self.robot_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
@@ -238,13 +239,14 @@ class SimpleXMLSeparator:
             'joints': set()
         }
         
-        # Get robot body names
+        # Get robot body names (exclude 'world' — the root body is shared with the scene,
+        # so including it would misclassify floor/pedestal geoms as robot geoms)
         for body_id in range(self.robot_model.nbody):
             body_name = mujoco.mj_id2name(self.robot_model, mujoco.mjtObj.mjOBJ_BODY, body_id)
-            
-            if body_name:
+
+            if body_name and body_name != 'world':
                 names['bodies'].add(body_name)
-        
+
         # Get robot geom names
         for geom_id in range(self.robot_model.ngeom):
             geom_name = mujoco.mj_id2name(self.robot_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
