@@ -147,27 +147,27 @@ tasks:
       check_clearance: false
 
   # ── handover ───────────────────────────────────────────────────────────────
-  # Pick object3, carry to table-edge. Right-edge goals capped at x ≤ 0.40 to
-  # clear the new right-side wall at x=+0.58.
+  # Pick object3, carry to table-edge. Right-side wall at x=+0.58 blocks
+  # place-descent for goals at x>0.2, so handover goals avoid the wall zone.
 
   handover_nominal:
     category: handover
-    description: "Pick object3, carry to right-mid edge (wall-clearance safe)"
+    description: "Pick object3, carry to front-near edge (short, collision-safe)"
     place_height: table_surface
     goal:
       type: zones
       zones:
-        - {x: [0.28, 0.40], y: [-0.40, -0.55]}
+        - {x: [-0.10, 0.20], y: [-0.22, -0.28]}
       check_clearance: true
 
   handover_far:
     category: handover
-    description: "Pick object3, carry to far-right-corner (wall-adjacent, longer reach)"
+    description: "Pick object3, carry to front-right near edge (moderate reach)"
     place_height: table_surface
     goal:
       type: zones
       zones:
-        - {x: [0.28, 0.40], y: [-0.58, -0.68]}
+        - {x: [0.10, 0.22], y: [-0.25, -0.32]}
       check_clearance: true
 
   handover_over:

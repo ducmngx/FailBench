@@ -5,7 +5,7 @@
     Mesh objects: cubesmall (object3), apple, banana, knife, alarmclock, rubberduck
     Cylinder primitives: coffeemug, bowl
   -->
-  <size nconmax="600" njmax="2500"/>
+  <size nconmax="600" njmax="2500" nstack="2000000"/>
   <option timestep="1e-3" cone="elliptic" impratio="5" tolerance="1e-6"
           iterations="30" ls_iterations="10" noslip_tolerance="1e-6"/>
   <option noslip_iterations="3"><flag multiccd="enable" gravity="enable"/></option>
@@ -130,11 +130,11 @@
       <geom class="obj_col" mesh="rubberduck_c2"/>
     </body>
 
-    <!-- coffeemug (cylinder, brown-red) -->
-    <body name="obstacle_coffeemug" pos="-0.18 -0.420 0.810">
+    <!-- coffeemug (box, brown-red) — near-left, clear of apple/alarmclock for reliable grasp -->
+    <body name="obstacle_coffeemug" pos="-0.25 -0.400 0.810">
       <joint name="obstacle_coffeemug_joint" type="free"/>
-      <geom name="obstacle_coffeemug_geom" type="cylinder" size="0.030 0.050"
-            rgba="0.55 0.22 0.08 1" condim="3"/>
+      <geom name="obstacle_coffeemug_geom" type="box" size="0.025 0.025 0.050"
+            rgba="0.55 0.22 0.08 1" friction="2.8 1.2 0.1" condim="6"/>
     </body>
 
     <!-- bowl (wide flat cylinder, white) -->
@@ -142,6 +142,28 @@
       <joint name="obstacle_bowl_joint" type="free"/>
       <geom name="obstacle_bowl_geom" type="cylinder" size="0.055 0.022"
             rgba="0.92 0.92 0.92 1" condim="3"/>
+    </body>
+
+    <!-- Bin: fixed open-top box, near-right corner flush with table corner -->
+    <!-- Interior: 240×240mm, walls 10mm thick, 80mm tall                  -->
+    <!-- Body at table surface z=0.760; outer corner at (0.600, -0.200)    -->
+    <body name="bin" pos="0.470 -0.330 0.760">
+      <!-- back wall (away from robot) -->
+      <geom type="box" size="0.130 0.005 0.040" pos="0 -0.125 0.040"
+            rgba="0.90 0.25 0.05 1" friction="1 0.5 0.01" condim="3"
+            contype="1" conaffinity="1"/>
+      <!-- front wall (towards robot) -->
+      <geom type="box" size="0.130 0.005 0.040" pos="0  0.125 0.040"
+            rgba="0.90 0.25 0.05 1" friction="1 0.5 0.01" condim="3"
+            contype="1" conaffinity="1"/>
+      <!-- left wall -->
+      <geom type="box" size="0.005 0.120 0.040" pos="-0.125 0 0.040"
+            rgba="0.90 0.25 0.05 1" friction="1 0.5 0.01" condim="3"
+            contype="1" conaffinity="1"/>
+      <!-- right wall (flush with table right edge) -->
+      <geom type="box" size="0.005 0.120 0.040" pos=" 0.125 0 0.040"
+            rgba="0.90 0.25 0.05 1" friction="1 0.5 0.01" condim="3"
+            contype="1" conaffinity="1"/>
     </body>
 
   </worldbody>
