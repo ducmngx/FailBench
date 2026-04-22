@@ -46,82 +46,48 @@
     <camera name="front_cam" pos="-0.65 -1.3 1.0762"
             xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
 
-    <!-- First Row -->
-      <body name="obstacle_soft1" pos="-0.2 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft1_joint" type="free"/>
-        <geom name="obstacle_soft1_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="obstacle_soft2" pos="-0.1 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft2_joint" type="free"/>
-        <geom name="obstacle_soft2_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="obstacle_soft3" pos="0.0 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft3_joint" type="free"/>
-        <geom name="obstacle_soft3_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="obstacle_soft4" pos="0.1 -0.25 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft4_joint" type="free"/>
-        <geom name="obstacle_soft4_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="object3" pos="0.2 -0.25 0.43" quat="0 0 0 1">
+    <!-- Pickable objects — at table edges with ≥0.15m clearance from neighbors -->
+      <body name="object3" pos="0.22 -0.24 0.43" quat="0 0 0 1">
         <joint name="object3_joint" type="free"/>
         <geom name="object3_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.35 0.0 1" solimp="0.015 1 0.02" solref="0.005 1" condim="6" friction="2.8 1.2 0.1"/>
       </body>
 
-    <!-- Second Row -->
-      <body name="obstacle_soft5" pos="-0.2 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft5_joint" type="free"/>
-        <geom name="obstacle_soft5_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="obstacle_hard6" pos="-0.1 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle_hard6_joint" type="free"/>
-        <geom name="obstacle_hard6_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
-      </body>
-
-      <body name="obstacle_soft7" pos="0.0 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft7_joint" type="free"/>
-        <geom name="obstacle_soft7_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="obstacle_soft8" pos="0.1 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft8_joint" type="free"/>
-        <geom name="obstacle_soft8_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-      <body name="obstacle_soft9" pos="0.2 -0.35 0.43" quat="0 0 0 1">
-        <joint name="obstacle_soft9_joint" type="free"/>
-        <geom name="obstacle_soft9_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
-      </body>
-
-    <!-- Third Row -->
-      <body name="object1" pos="-0.2 -0.45 0.43" quat="0 0 0 1">
+      <body name="object1" pos="-0.22 -0.47 0.43" quat="0 0 0 1">
         <joint name="object1_joint" type="free"/>
-        <geom name="object1_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.0 0.35 1"/>
+        <geom name="object1_geom" type="box" size="0.03 0.03 0.03" rgba="0.0 0.0 0.35 1" solimp="0.015 1 0.02" solref="0.005 1" condim="6" friction="2.8 1.2 0.1"/>
       </body>
 
-      <body name="obstacle_hard10" pos="-0.1 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle_hard10_joint" type="free"/>
-        <geom name="obstacle_hard10_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
+    <!-- Near row — soft obstacles -->
+      <body name="obstacle_soft1" pos="-0.08 -0.27 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft1_joint" type="free"/>
+        <geom name="obstacle_soft1_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle_hard11" pos="0.0 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle_hard11_joint" type="free"/>
-        <geom name="obstacle_hard11_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
+      <body name="obstacle_soft2" pos="0.06 -0.27 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft2_joint" type="free"/>
+        <geom name="obstacle_soft2_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
       </body>
 
-      <body name="obstacle_hard12" pos="0.1 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle_hard12_joint" type="free"/>
-        <geom name="obstacle_hard12_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
+    <!-- Mid row — hard obstacles (stack targets) -->
+      <body name="obstacle_hard1" pos="-0.12 -0.36 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard1_joint" type="free"/>
+        <geom name="obstacle_hard1_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
-      <body name="obstacle_hard13" pos="0.2 -0.45 0.43" quat="0 0 0 1">
-        <joint name="obstacle_hard13_joint" type="free"/>
-        <geom name="obstacle_hard13_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
+      <body name="obstacle_hard2" pos="0.12 -0.36 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard2_joint" type="free"/>
+        <geom name="obstacle_hard2_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
+      </body>
+
+    <!-- Far row — mixed -->
+      <body name="obstacle_soft3" pos="0.02 -0.47 0.43" quat="0 0 0 1">
+        <joint name="obstacle_soft3_joint" type="free"/>
+        <geom name="obstacle_soft3_geom" type="box" size="0.03 0.03 0.03" rgba="1.0 1.0 0.698 1"/>
+      </body>
+
+      <body name="obstacle_hard3" pos="0.18 -0.47 0.43" quat="0 0 0 1">
+        <joint name="obstacle_hard3_joint" type="free"/>
+        <geom name="obstacle_hard3_geom" type="box" size="0.03 0.03 0.03" rgba="0.4 0.0 0.0 1"/>
       </body>
 
     <!-- simple table, now really on the ground -->
