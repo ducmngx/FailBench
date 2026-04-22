@@ -87,7 +87,8 @@ def _filter_meshes_only(pkl_paths):
 def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
          interp_points=100, steps_per_point=8,
          show_meta=False, pause_at_grasp=False, flag_bad=False,
-         flagged_log=None, strict_attach=False):
+         flagged_log=None, strict_attach=False, show_depth=False,
+         depth_cams=("ee_cam",)):
     """Play all trajectories in pkl_paths using a shared MuJoCo viewer."""
     model = mujoco.MjModel.from_xml_path(scene_xml)
     data = mujoco.MjData(model)
@@ -104,6 +105,28 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
 
     n_total = len(pkl_paths)
     print(f"\nPlaying {n_total} trajectories. Close viewer to stop.\n")
+
+    depth_renderers = []
+    if show_depth:
+        import cv2
+        from planner.experiments.data_capture import OffscreenRenderer
+        for cam in depth_cams:
+            r = OffscreenRenderer(model, height=240, width=320, camera_name=cam)
+            depth_renderers.append((cam, r))
+            cv2.namedWindow(f"depth: {cam}", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(f"depth: {cam}", 480, 360)
+
+    def _pump_depth():
+        if not depth_renderers:
+            return
+        for cam, r in depth_renderers:
+            d = r.render_depth(data)
+            near, far = 0.05, 2.0
+            d = np.clip(d, near, far)
+            norm = ((d - near) / (far - near) * 255).astype(np.uint8)
+            colored = cv2.applyColorMap(255 - norm, cv2.COLORMAP_TURBO)
+            cv2.imshow(f"depth: {cam}", colored)
+        cv2.waitKey(1)
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         for i, pkl_path in enumerate(pkl_paths):
@@ -179,6 +202,7 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
                             mujoco.mj_step(model, data)
                             lock.update(data)
                         viewer.sync()
+                        _pump_depth()
                         time.sleep(0.002 / max(speed, 0.1))
 
                     if action == "grasp":
@@ -257,6 +281,12 @@ def play(pkl_paths, scene_xml, hold_secs=2.0, speed=1.0,
                 n_flagged = sum(1 for _ in fl)
             print(f"Flagged {n_flagged} trajectory/ies in {flagged_log}")
 
+    if depth_renderers:
+        import cv2
+        for _, r in depth_renderers:
+            r.close()
+        cv2.destroyAllWindows()
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -292,6 +322,11 @@ if __name__ == "__main__":
     parser.add_argument("--strict-attach", action="store_true", dest="strict_attach",
                         help="Require finger-object contact before engaging GraspLock; "
                              "print GRASP-FAILED when fingers didn't actually close on the object.")
+    parser.add_argument("--show_depth", action="store_true",
+                        help="Pop up a depth-camera window (OpenCV) alongside the 3D viewer.")
+    parser.add_argument("--depth_cam", default="ee_cam",
+                        help="Comma-separated camera names for depth windows "
+                             "(default ee_cam; e.g. 'ee_cam,front_cam').")
 
     args = parser.parse_args()
 
@@ -331,4 +366,6 @@ if __name__ == "__main__":
         flag_bad=args.flag_bad,
         flagged_log=flagged_log,
         strict_attach=args.strict_attach,
+        show_depth=args.show_depth,
+        depth_cams=tuple(c.strip() for c in args.depth_cam.split(",") if c.strip()),
     )
