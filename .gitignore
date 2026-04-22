@@ -9,6 +9,7 @@ MUJOCO_LOG.TXT
 
 .env
 .vscode/
+.claude/
 
 # External assets (cloned repos — download via external_assets/setup.sh)
 external_assets/vikashplus_*/
