@@ -50,6 +50,7 @@ class ExperimentConfig:
 
     # Where along the trajectory to inject failure
     fail_fraction: Optional[float] = None   # fraction [0,1] of trajectory; None = random from canonical set
+    fail_sim_step: Optional[int] = None     # absolute sim-step index; overrides fail_fraction when set
     canonical_fail_fractions: List[float] = field(
         default_factory=lambda: [0.1, 0.25, 0.4, 0.55, 0.7, 0.85]
     )

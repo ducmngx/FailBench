@@ -284,16 +284,24 @@ class ExperimentRunner:
             })
             total_points += len(dense)
 
-        # Choose failure point
-        if config.fail_fraction is not None:
-            frac = config.fail_fraction
+        # Choose failure point — resolved to an absolute sim-step index.
+        total_sim_steps = total_points * config.steps_per_interp_point
+        if config.fail_sim_step is not None:
+            target_sim_step = int(config.fail_sim_step)
+            target_sim_step = max(1, min(target_sim_step, total_sim_steps - 1))
+            frac_reported = target_sim_step / (total_sim_steps - 1)
         else:
-            frac = self._rng.choice(config.canonical_fail_fractions)
-        fail_at = max(1, min(int(frac * (total_points - 1)), total_points - 1))
+            if config.fail_fraction is not None:
+                frac = config.fail_fraction
+            else:
+                frac = self._rng.choice(config.canonical_fail_fractions)
+            target_sim_step = int(frac * (total_sim_steps - 1))
+            target_sim_step = max(1, min(target_sim_step, total_sim_steps - 1))
+            frac_reported = frac  # preserve exact requested fraction in the output
 
         # Replay segments
         grip_ctrl = self.data.ctrl[7]  # starts open
-        global_idx = 0
+        global_sim_step = 0
         self._grasp_lock = GraspLock(self.model)
 
         for seg_info in dense_segments:
@@ -306,15 +314,14 @@ class ExperimentRunner:
                 for _ in range(config.steps_per_interp_point):
                     mujoco.mj_step(self.model, self.data)
                     self._grasp_lock.update(self.data)
-
-                if global_idx == fail_at:
-                    logger.info(
-                        "Failure at fraction=%.2f, point=%d/%d, segment='%s'",
-                        frac, global_idx, total_points, seg_name,
-                    )
-                    return self._capture_and_fork(
-                        traj_progress=frac, experiment_id=experiment_id)
-                global_idx += 1
+                    if global_sim_step == target_sim_step:
+                        logger.info(
+                            "Failure at sim_step=%d/%d (frac=%.3f), segment='%s'",
+                            global_sim_step, total_sim_steps, frac_reported, seg_name,
+                        )
+                        return self._capture_and_fork(
+                            traj_progress=frac_reported, experiment_id=experiment_id)
+                    global_sim_step += 1
 
             # Segment boundary actions
             action = seg_info["action_after"]
