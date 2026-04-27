@@ -1,6 +1,7 @@
 """Batch experiment orchestration, npz I/O, and CSV manifest generation."""
 
 import csv
+import concurrent.futures
 import glob as globmod
 import logging
 import multiprocessing
@@ -146,11 +147,27 @@ def append_manifest(rows: List[dict], path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_single(config: ExperimentConfig) -> Optional[DataSample]:
-    """Run one experiment trial. Called by pool workers."""
+def _run_and_save(args) -> Optional[dict]:
+    """Run one trial and save its npz inside the worker.
+
+    Returns only the small manifest-row dict (pickle-safe) to the parent.
+    The previous design returned the full DataSample (images + 10k-100k
+    contact rows, several MB) via the Pool's reply pipe; that deadlocked
+    multiprocessing under load. Saving in-worker sidesteps it.
+
+    `args` is a (ExperimentConfig, output_dir) tuple so this function stays
+    a single-arg callable for pool.imap_unordered.
+    """
+    config, output_dir = args
     runner = ExperimentRunner(config)
     try:
-        return runner.run()
+        sample = runner.run()
+        if sample is None:
+            return None
+        npz_name = f"{sample.experiment_id}.npz"
+        npz_path = os.path.join(output_dir, npz_name)
+        save_sample_npz(sample, npz_path)
+        return _manifest_row(sample, npz_name)
     except Exception:
         logger.exception("Trial %s failed", config.experiment_id)
         return None
@@ -218,9 +235,17 @@ class BatchExperimentManager:
         return self.run_batch_chunked(configs, chunk_size=len(configs))
 
     def run_batch_chunked(
-        self, configs: List[ExperimentConfig], chunk_size: int = 100
+        self, configs: List[ExperimentConfig], chunk_size: int = 100,
+        per_trial_timeout_s: float = 300.0,
     ) -> str:
-        """Run in chunks, writing manifest after each chunk for crash resilience."""
+        """Run in chunks, writing manifest after each chunk for crash resilience.
+
+        Uses ``concurrent.futures.ProcessPoolExecutor`` rather than
+        ``multiprocessing.Pool`` because the Pool API deadlocks the whole batch
+        when any worker dies mid-task (MuJoCo crashes, OOM kills). Executor
+        exposes per-future timeouts and a ``BrokenProcessPool`` signal, so we
+        can skip a stuck trial and keep the batch moving.
+        """
         manifest_path = os.path.join(self.output_dir, "manifest.csv")
         total = len(configs)
 
@@ -231,24 +256,73 @@ class BatchExperimentManager:
                 chunk_start, chunk_start + len(chunk), total,
             )
 
+            args = [(c, self.output_dir) for c in chunk]
             if self.num_workers <= 1:
-                samples = [_run_single(c) for c in chunk]
+                rows_raw = [_run_and_save(a) for a in args]
             else:
-                with multiprocessing.Pool(self.num_workers) as pool:
-                    samples = list(pool.imap_unordered(_run_single, chunk))
+                rows_raw = _run_chunk_executor(
+                    args, self.num_workers, per_trial_timeout_s)
 
-            # Save results
-            rows: List[dict] = []
-            for sample in samples:
-                if sample is None:
-                    continue
-                npz_name = f"{sample.experiment_id}.npz"
-                npz_path = os.path.join(self.output_dir, npz_name)
-                save_sample_npz(sample, npz_path)
-                rows.append(_manifest_row(sample, npz_name))
-
+            rows = [r for r in rows_raw if r is not None]
             if rows:
                 append_manifest(rows, manifest_path)
-                logger.info("Saved %d samples, manifest updated", len(rows))
+                logger.info(
+                    "Saved %d/%d samples in chunk, manifest updated",
+                    len(rows), len(chunk),
+                )
 
         return manifest_path
+
+
+def _run_chunk_executor(args_list, num_workers, per_trial_timeout_s):
+    """Run a chunk with a process-pool executor, resilient to worker death.
+
+    Each trial is submitted as a separate future with ``per_trial_timeout_s``.
+    If a worker dies or a trial exceeds the timeout, we log and move on — the
+    executor is then torn down, a fresh one is created for the remaining
+    trials. This matches the ``maxtasksperchild=1`` spirit (one fresh process
+    per trial) while giving us robust failure handling.
+    """
+    results = [None] * len(args_list)
+    ctx = multiprocessing.get_context("spawn")
+
+    # Process trials in mini-batches of num_workers; each mini-batch uses a
+    # fresh Executor so BrokenProcessPool from one dead worker doesn't poison
+    # subsequent trials.
+    i = 0
+    while i < len(args_list):
+        batch_end = min(i + num_workers, len(args_list))
+        batch = args_list[i:batch_end]
+        try:
+            with concurrent.futures.ProcessPoolExecutor(
+                max_workers=num_workers, mp_context=ctx
+            ) as ex:
+                futures = {ex.submit(_run_and_save, a): (i + k)
+                           for k, a in enumerate(batch)}
+                for fut in concurrent.futures.as_completed(
+                    futures, timeout=per_trial_timeout_s * 2,
+                ):
+                    idx = futures[fut]
+                    cfg_id = batch[idx - i][0].experiment_id
+                    try:
+                        results[idx] = fut.result(timeout=per_trial_timeout_s)
+                    except concurrent.futures.TimeoutError:
+                        logger.warning("Trial %s timed out (>%.0fs) — skipped",
+                                       cfg_id, per_trial_timeout_s)
+                        results[idx] = None
+                    except concurrent.futures.process.BrokenProcessPool:
+                        logger.warning("Trial %s worker crashed — skipped", cfg_id)
+                        results[idx] = None
+                    except Exception as e:
+                        logger.warning("Trial %s raised: %s", cfg_id, e)
+                        results[idx] = None
+        except concurrent.futures.process.BrokenProcessPool:
+            # One worker died, executor is unusable — results for this batch
+            # that haven't returned yet are lost. Continue with next batch.
+            logger.warning("Pool broken during mini-batch %d-%d; skipping "
+                           "unfinished trials in this batch", i, batch_end)
+        except concurrent.futures.TimeoutError:
+            logger.warning("Mini-batch %d-%d overall timeout; skipping rest",
+                           i, batch_end)
+        i = batch_end
+    return results
