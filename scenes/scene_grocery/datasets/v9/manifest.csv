@@ -1,5 +1,0 @@
-experiment_id,trajectory_file,seed,fail_phase,fail_step,num_contacts,num_failure_modes,had_any_collision,impacted_geom_ids,pre_qvel_norm,npz_file
-exp_00000,scene_grocery_RRTConnect_new_baseline.pkl,0,7,55,16033,1,True,15;31;66;85;92;93;95;96;97;98;99;100;101;102,0.2376,exp_00000.npz
-exp_00001,scene_grocery_RRTConnect_sample_0.pkl,1,6,10,23789,1,True,32;33;51;60;71;72;73;74;85;92;93;95;96;97;98;99;100;101;102,0.1014,exp_00001.npz
-exp_00002,scene_grocery_RRTConnect_sample_1.pkl,2,7,10,16429,1,True,32;33;51;60;85;92;93;95;96;97;98;99;100;101;102,0.0809,exp_00002.npz
-exp_00003,scene_grocery_RRTConnect_sample_7.pkl,3,6,70,23374,1,True,32;33;51;60;71;72;73;74;85;92;93;95;96;97;98;99;100;101;102,0.0483,exp_00003.npz

@@ -1,5 +1,0 @@
-experiment_id,trajectory_file,seed,fail_phase,fail_step,num_contacts,num_failure_modes,had_any_collision,impacted_geom_ids,pre_qvel_norm,npz_file
-exp_00000,scene_kitchen_RRTConnect_new_baseline.pkl,0,7,55,9195,1,True,15;17;80;81;82;83;84;85;93;95;98,1.414,exp_00000.npz
-exp_00001,scene_kitchen_RRTConnect_sample_0.pkl,1,6,10,8207,1,True,15;17;80;81;83;84;85;93;95;98,0.579,exp_00001.npz
-exp_00002,scene_kitchen_RRTConnect_sample_1.pkl,2,7,10,8000,1,True,15;17;80;83;84;85;93;95;98,0.5521,exp_00002.npz
-exp_00003,scene_kitchen_RRTConnect_sample_7.pkl,3,6,70,8078,1,True,15;17;80;81;82;83;84;85;93;94;95;98,2.4849,exp_00003.npz

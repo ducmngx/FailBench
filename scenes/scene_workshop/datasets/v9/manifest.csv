@@ -1,5 +1,0 @@
-experiment_id,trajectory_file,seed,fail_phase,fail_step,num_contacts,num_failure_modes,had_any_collision,impacted_geom_ids,pre_qvel_norm,npz_file
-exp_00000,scene_workshop_RRTConnect_new_baseline.pkl,0,7,55,3032,1,True,1;15;17;85;86;100,1.4025,exp_00000.npz
-exp_00001,scene_workshop_RRTConnect_sample_0.pkl,1,6,10,3023,1,True,1;15;17;85;86;100,0.5776,exp_00001.npz
-exp_00002,scene_workshop_RRTConnect_sample_1.pkl,2,7,10,3000,1,True,15;17;85;86;100,0.553,exp_00002.npz
-exp_00003,scene_workshop_RRTConnect_sample_7.pkl,3,6,70,3000,1,True,15;17;85;86;100,2.4863,exp_00003.npz
