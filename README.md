@@ -13,6 +13,7 @@
 - [Installation](#installation) — clone → conda → external assets → GraspGen
 - [Quickstart](#quickstart) — 3 commands to a verified trajectory
 - [Pipeline](#pipeline) — generate → verify → play → inject failures → npz
+- [Risk modeling](docs/risk_modeling.md) — learn per-config contact density, integrate per entity → planner safety cost
 - [Cluster / headless deployment](#cluster--headless-deployment)
 - [Task schema](#task-schema) and [adding new scenes/tasks](docs/data_generation.md)
 - [Troubleshooting](#troubleshooting)
@@ -381,21 +382,28 @@ external/GraspGen/       Submodule — 6-DoF grasp generator (isolated UV venv)
 cache/graspgen/          Precomputed grasp YAMLs keyed by mesh SHA (gitignored)
 planner/
   experiments/           ExperimentConfig, ExperimentRunner, data capture, npz I/O
+  risk/                  Spatial contact-density target + entity integration + heatmap regressor
   examples/              Reference pick-and-place planner (IK+RRT)
   tasks.py               tasks.yaml loader + goal samplers
   grasp_lock.py          Sticky gripper (kinematic attach)
   grasp_sampler.py       GraspGen candidate sampler
 scripts/
-  generate_task_trajs.py Stage 1: IK+RRT trajectory generation
-  verify_task_trajs.py   Stage 2: physics audit of existing pkls
-  play_task_trajs.py     Stage 3: MuJoCo viewer + optional depth windows
-  test_pipeline.py       Stage 4: end-to-end smoke test (failure injection)
-  precompute_grasps.py   GraspGen cache builder
-  install_graspgen.sh    GraspGen UV venv installer
+  generate_task_trajs.py    Stage 1: IK+RRT trajectory generation
+  verify_task_trajs.py      Stage 2: physics audit of existing pkls
+  play_task_trajs.py        Stage 3: MuJoCo viewer + optional depth windows
+  test_pipeline.py          Stage 4: end-to-end smoke test (failure injection)
+  build_density_targets.py  Stage 5: per-config 2D contact-density targets
+  train_demo.py             Stage 6: heatmap regressor demo (one scene)
+  precompute_grasps.py      GraspGen cache builder
+  install_graspgen.sh       GraspGen UV venv installer
+notebooks/
+  inspect_dataset.ipynb     Whole-dataset inspection + per-scene density heatmaps
+  eval_model.ipynb          Heatmap regressor evaluation + camera-overlay projection
 docs/
   data_generation.md     Deep reference for tasks.yaml + stages 1-3
   graspgen_setup.md      GraspGen install / caveats
   pipeline.md            Architecture / npz schema reference
+  risk_modeling.md       Stages 5-6 (target dataset, model, eval)
 ```
 
 ---

@@ -28,3 +28,6 @@ cache/graspgen/
 # or scripts/generate_dataset_tasks.py
 scenes/*/datasets/
 /datasets/
+
+# Heatmap regressor training outputs — regenerate via scripts/train_demo.py
+/runs/
