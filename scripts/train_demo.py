@@ -24,14 +24,14 @@ sys.path.insert(0, str(REPO_ROOT))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from scipy.stats import spearmanr
-
-import mujoco
 
 from planner.risk.dataset import HeatmapDataset, DatasetStats, split_traj_keys
 from planner.risk.model import HeatmapMLP, HeatmapConvDecoder, HeatmapVisionConvDecoder
-from planner.risk.spatial import (
-    load_grid, entity_footprints, integrate_per_entity)
+from planner.risk.spatial import load_grid
+
+# Per-obstacle Spearman has been demoted to offline eval — see
+# notebooks/eval_model.ipynb. Training selects checkpoints purely on
+# reconstruction MSE, which is the bottleneck across stages 0–5.
 
 
 def parse_args():
@@ -131,22 +131,15 @@ def main():
     y_std_t  = torch.from_numpy(stats.y_std).to(args.device)
     baseline_mse_destd = float(((stats.y_std ** 2).mean()))   # MSE if predicting train mean (in original units)
 
-    # ---- For Spearman entity check ----
+    # Grid is still loaded so the preds-panel can use scene-aligned extents.
     grid = load_grid(args.dataset / args.scene / "grid.json")
-    model_xml = args.scenes_dir / args.scene / "scene.xml"
-    mj_model = mujoco.MjModel.from_xml_path(str(model_xml))
-    fps = entity_footprints(mj_model, grid)
-    obstacle_names = [n for n in fps if "obstacle" in n.lower()]
-    print(f"entity Spearman tracked over {len(obstacle_names)} obstacles")
 
     # ---- Loop ----
-    history = {"train_loss": [], "val_loss": [], "val_mse_destd": [], "val_spearman": []}
+    history = {"train_loss": [], "val_loss": [], "val_mse_destd": []}
     best_val = float("inf")
-    best_rho = -float("inf")
     best_mse_path = args.output_dir / "best_mse.pt"
-    best_rho_path = args.output_dir / "best_rho.pt"
-    # Legacy: keep `best.pt` as a symlink-equivalent (copy of best_mse.pt) so
-    # existing notebooks and eval scripts that load `best.pt` keep working.
+    # Legacy: keep `best.pt` as an alias of best_mse.pt so existing notebooks
+    # and eval scripts that load `best.pt` keep working.
     best_path = args.output_dir / "best.pt"
 
     def _forward(batch):
@@ -176,53 +169,30 @@ def main():
         # ---- Validation ----
         model.eval()
         val_losses = []
-        # accumulate predictions for entity Spearman (only on val obstacles)
-        ent_pred_acc = {n: [] for n in obstacle_names}
-        ent_targ_acc = {n: [] for n in obstacle_names}
         sq_err_destd_sum = 0.0
         n_cells = 0
         with torch.no_grad():
             for batch in val_loader:
                 pred, y = _forward(batch)
                 val_losses.append(F.mse_loss(pred, y).item())
-                # de-standardise
                 pred_d = pred * y_std_t + y_mean_t
                 y_d    = y    * y_std_t + y_mean_t
                 sq_err_destd_sum += float(((pred_d - y_d) ** 2).sum())
                 n_cells += y_d.numel()
-                # entity scores per sample (move to CPU for numpy footprints)
-                pred_np = pred_d.cpu().numpy()
-                y_np    = y_d.cpu().numpy()
-                for k in range(pred_np.shape[0]):
-                    ep_scores = integrate_per_entity(pred_np[k], fps)
-                    et_scores = integrate_per_entity(y_np[k], fps)
-                    for n in obstacle_names:
-                        ent_pred_acc[n].append(ep_scores.get(n, 0.0))
-                        ent_targ_acc[n].append(et_scores.get(n, 0.0))
 
-        flat_pred = np.concatenate([np.asarray(v) for v in ent_pred_acc.values()])
-        flat_targ = np.concatenate([np.asarray(v) for v in ent_targ_acc.values()])
-        if flat_pred.std() > 0 and flat_targ.std() > 0:
-            rho, _ = spearmanr(flat_pred, flat_targ)
-        else:
-            rho = float("nan")
         train_loss = float(np.mean(train_losses))
         val_loss   = float(np.mean(val_losses))
         val_mse_destd = sq_err_destd_sum / n_cells
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["val_mse_destd"].append(val_mse_destd)
-        history["val_spearman"].append(float(rho))
 
         improved_mse = val_loss < best_val
-        # rho is NaN early when predictions have zero variance — skip those.
-        improved_rho = (not np.isnan(rho)) and (rho > best_rho)
-        marker = ("M" if improved_mse else " ") + ("R" if improved_rho else " ")
+        marker = "*" if improved_mse else " "
         print(f" ep {ep+1:>3d}/{args.epochs}  "
               f"train={train_loss:.4f}  val={val_loss:.4f}  "
               f"val_mse_destd={val_mse_destd:.3f}  "
-              f"baseline_mse={baseline_mse_destd:.3f}  "
-              f"rho={rho:.3f}  {marker}")
+              f"baseline_mse={baseline_mse_destd:.3f}  {marker}")
 
         def _save(path: Path):
             torch.save({
@@ -241,21 +211,14 @@ def main():
             best_val = val_loss
             _save(best_mse_path)
             _save(best_path)  # legacy alias
-        if improved_rho:
-            best_rho = rho
-            _save(best_rho_path)
 
-    best_rho_epoch = int(np.nanargmax(history["val_spearman"])) + 1
     best_mse_epoch = int(np.argmin(history["val_loss"])) + 1
     print(f"\nbest val_loss = {best_val:.4f} at ep {best_mse_epoch} (saved to {best_mse_path})")
-    print(f"best Spearman ρ = {best_rho:.4f} at ep {best_rho_epoch} (saved to {best_rho_path})")
-    print(f"  ρ at best-MSE epoch: {history['val_spearman'][best_mse_epoch-1]:.4f}")
-    print(f"  val_mse at best-ρ epoch: {history['val_mse_destd'][best_rho_epoch-1]:.3f}")
     print(f"baseline (predict train mean) MSE in original units: {baseline_mse_destd:.3f}")
     print(f"final val_mse_destd: {history['val_mse_destd'][-1]:.3f}")
 
     # ---- Loss curve plot ----
-    fig, axes = plt.subplots(1, 3, figsize=(13, 3.6))
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.6))
     epochs = np.arange(1, args.epochs + 1)
     axes[0].plot(epochs, history["train_loss"], label="train")
     axes[0].plot(epochs, history["val_loss"],   label="val")
@@ -266,68 +229,57 @@ def main():
                     label=f"baseline (predict mean) = {baseline_mse_destd:.3f}")
     axes[1].set(title="val MSE (original units)", xlabel="epoch", ylabel="MSE")
     axes[1].legend(); axes[1].grid(alpha=0.3)
-    axes[2].plot(epochs, history["val_spearman"], color="forestgreen")
-    axes[2].set(title="Spearman ρ (predicted vs target obstacle scores)",
-                xlabel="epoch", ylabel="ρ")
-    axes[2].axhline(0.85, color="gray", linestyle="--", label="0.85 floor")
-    axes[2].legend(); axes[2].grid(alpha=0.3)
     plt.tight_layout(); plt.savefig(args.output_dir / "loss_curve.png", dpi=110)
     plt.close()
 
-    # ---- Predicted vs actual panel for 5 held-out configs (best-on-MSE and best-on-ρ) ----
+    # ---- Predicted vs actual panel for 5 held-out configs ----
     rng = np.random.default_rng(args.seed)
     sel = rng.choice(len(val_ds), size=5, replace=False)
-    for ckpt_path, out_name in [(best_mse_path, "preds_best_mse.png"),
-                                 (best_rho_path, "preds_best_rho.png")]:
-        if not ckpt_path.exists():
-            continue
-        print(f"rendering {out_name} from {ckpt_path.name}...")
-        ckpt = torch.load(ckpt_path, map_location=args.device, weights_only=False)
-        model.load_state_dict(ckpt["model_state"])
-        model.eval()
-        fig, axes = plt.subplots(5, 3, figsize=(11, 14))
-        for k, idx in enumerate(sel):
-            item = val_ds[idx]
-            if args.include_rgb:
-                x, rgb, y, _ = item
-                with torch.no_grad():
-                    p = model(x.unsqueeze(0).to(args.device),
-                              rgb.unsqueeze(0).to(args.device)).cpu().numpy()[0]
-            else:
-                x, y, _ = item
-                with torch.no_grad():
-                    p = model(x.unsqueeze(0).to(args.device)).cpu().numpy()[0]
-            target_d = y.numpy() * stats.y_std + stats.y_mean
-            pred_d   = p          * stats.y_std + stats.y_mean
-            err = np.abs(target_d - pred_d)
-            vmax = max(target_d.max(), pred_d.max(), 1e-6)
-            for c, (img, _t) in enumerate([(target_d, "target"), (pred_d, "pred"), (err, "|err|")]):
-                ax = axes[k, c]
-                ax.imshow(img, origin="lower", extent=grid.extent, cmap="magma",
-                          vmin=0, vmax=vmax if c < 2 else err.max() + 1e-6)
-                ax.set_xticks([]); ax.set_yticks([])
-            row = val_ds.rows[idx]
-            axes[k, 0].set_ylabel(f"{row.task_id}\ntraj{row.traj_id}", fontsize=8)
-            if k == 0:
-                for c, t in enumerate(["target", "pred", "|err|"]):
-                    axes[k, c].set_title(t)
-        fig.suptitle(f"checkpoint: {ckpt_path.name} (epoch {ckpt['epoch']})", fontsize=10)
-        plt.tight_layout(); plt.savefig(args.output_dir / out_name, dpi=110)
-        plt.close()
+    print(f"rendering preds.png from {best_mse_path.name}...")
+    ckpt = torch.load(best_mse_path, map_location=args.device, weights_only=False)
+    model.load_state_dict(ckpt["model_state"])
+    model.eval()
+    fig, axes = plt.subplots(5, 3, figsize=(11, 14))
+    for k, idx in enumerate(sel):
+        item = val_ds[idx]
+        if args.include_rgb:
+            x, rgb, y, _ = item
+            with torch.no_grad():
+                p = model(x.unsqueeze(0).to(args.device),
+                          rgb.unsqueeze(0).to(args.device)).cpu().numpy()[0]
+        else:
+            x, y, _ = item
+            with torch.no_grad():
+                p = model(x.unsqueeze(0).to(args.device)).cpu().numpy()[0]
+        target_d = y.numpy() * stats.y_std + stats.y_mean
+        pred_d   = p          * stats.y_std + stats.y_mean
+        err = np.abs(target_d - pred_d)
+        vmax = max(target_d.max(), pred_d.max(), 1e-6)
+        for c, (img, _t) in enumerate([(target_d, "target"), (pred_d, "pred"), (err, "|err|")]):
+            ax = axes[k, c]
+            ax.imshow(img, origin="lower", extent=grid.extent, cmap="magma",
+                      vmin=0, vmax=vmax if c < 2 else err.max() + 1e-6)
+            ax.set_xticks([]); ax.set_yticks([])
+        row = val_ds.rows[idx]
+        axes[k, 0].set_ylabel(f"{row.task_id}\ntraj{row.traj_id}", fontsize=8)
+        if k == 0:
+            for c, t in enumerate(["target", "pred", "|err|"]):
+                axes[k, c].set_title(t)
+    fig.suptitle(f"checkpoint: best_mse.pt (epoch {ckpt['epoch']})", fontsize=10)
+    plt.tight_layout(); plt.savefig(args.output_dir / "preds.png", dpi=110)
+    plt.close()
 
     # ---- Save history json for downstream use ----
     (args.output_dir / "history.json").write_text(json.dumps({
         "history": history,
         "best_val": best_val,
-        "best_rho": best_rho,
         "best_mse_epoch": best_mse_epoch,
-        "best_rho_epoch": best_rho_epoch,
         "baseline_mse_destd": baseline_mse_destd,
         "n_train": len(train_ds), "n_val": len(val_ds),
         "n_train_keys": len(train_keys), "n_val_keys": len(val_keys),
     }, indent=2) + "\n")
 
-    print(f"done. open {args.output_dir}/{{loss_curve,preds_best_mse,preds_best_rho}}.png")
+    print(f"done. open {args.output_dir}/{{loss_curve,preds}}.png")
 
 
 if __name__ == "__main__":
