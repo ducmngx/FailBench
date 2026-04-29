@@ -52,6 +52,8 @@
     <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"/>
     <camera name="front_cam" pos="-0.65 -1.45 1.456"
             xyaxes="0.866 -0.5 0 0.211 0.366 0.906" fovy="45" mode="fixed"/>
+    <camera name="topdown_cam" pos="0 -0.47 1.96"
+            xyaxes="1 0 0 0 1 0" fovy="45" mode="fixed"/>
 
     <!-- studyTable: rotated 180° so shelf faces away, near edge y=-0.200 -->
     <body name="grocery_table" pos="0 -0.475 0" euler="0 0 3.14159">
