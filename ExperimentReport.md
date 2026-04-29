@@ -21,6 +21,63 @@ Metrics:
 - **Spearman ρ**: rank correlation of per-obstacle integrated scores
   (predicted vs target) on val set
 
+## Dataset size — what each stage actually trained on
+
+The full v10 dataset has **16,532 configs across 5 scenes**:
+
+| scene | configs | grid_shape |
+|---|---|---|
+| scene_level2     | 2,834 | (43, 70)   |
+| scene_kitchen    | 2,750 | (86, 130)  |
+| scene_workshop   | 3,725 | (93, 133)  |
+| scene_grocery    | 3,800 | (66, 130)  |
+| scene_cluttered  | 3,423 | (75, 110)  |
+| **Total**        | **16,532** | — |
+
+Per-stage coverage (90/10 traj-key split):
+
+| Stage | scenes used | train configs | val configs | v10 covered |
+|---|---|---|---|---|
+| 0 — state-only MLP | scene_level2 | 2,561 | 273 | 2,834 / 16,532 (17%) |
+| 1 — conv decoder | scene_level2 | 2,561 | 273 | 2,834 / 16,532 (17%) |
+| 2 — task / goal ablations | scene_level2 | 2,561 | 273 | 2,834 / 16,532 (17%) |
+| 3 — vision (+ ablation) | scene_level2 | 2,561 | 273 | 2,834 / 16,532 (17%) |
+| 4 — multi-scene + depth | all 5 | 14,884 | 1,648 | **16,532 / 16,532 (100%)** |
+| 5 — multi-scene baseline | all 5 | 14,884 | 1,648 | **16,532 / 16,532 (100%)** |
+
+**Stages 0–3 used scene_level2 only — 17% of v10**, by design (within-scene
+attribution before introducing scene-level variance). Only Stages 4 and 5
+trained on the full dataset.
+
+## Framing note (2026-04-29) — focusing on reconstruction
+
+After Stage 5, the per-scene Spearman ρ across stages was tracked alongside
+MSE because it maps directly onto the planner's `Σ score(eᵢ)·S(eᵢ)` cost.
+Most of what's noisy in the report is in that ρ axis — the MSE story is a
+clean monotone progression with no real regressions.
+
+**Decision**: from this point on, training scripts optimise and
+checkpoint **only on reconstruction MSE**. Per-obstacle Spearman becomes
+an *offline evaluation* metric, computed on a saved checkpoint via
+`notebooks/eval_model.ipynb` whenever needed.
+
+Concretely:
+- `train_demo.py` and `train_multiscene.py` no longer compute ρ during
+  training (the per-validation MuJoCo loads + `integrate_per_entity` were
+  the slowest validation step).
+- Only `best_mse.pt` is saved; `best_rho.pt` is gone. `best.pt` is kept
+  as a legacy alias of `best_mse.pt`.
+- The "Reading the Stage 5 results" subsection still applies — we keep
+  the analysis there as recorded interpretation. New runs just don't
+  produce ρ in the training history.
+
+The earlier-staged narrative (the MSE/ρ decoupling, the ρ-peaks-early
+pattern) stays valuable as documented context. We reintroduce ρ as a
+training objective only when reconstruction quality plateaus and we
+need to start trading pixel error for planner-relevant ranking — see
+the **Stage 9 (proposed) — Loss redesign** section near the end of the
+report.
+
 ---
 
 ## Stage 0 — State-only MLP baseline (current)
@@ -1062,10 +1119,200 @@ This stays as a roadmap entry until the multi-scene action items
 
 ---
 
+## DINOv2 consideration (proposed Stage 7)
+
+The "Things explicitly held off" entry below originally rejected pretrained
+backbones with the reasoning "16k configs, not 16M." That argument is sound
+*for training a transformer from scratch* and over-applies to using a
+*frozen* pretrained backbone. Two threads of evidence make DINOv2
+worth reconsidering:
+
+### Why reconsider pretrained vision
+
+**Stage 3 evidence**: our from-scratch CNN (~120k params) on ~2,500
+single-scene images had `final train_loss = 0.18` vs val 0.61 — a 3.38×
+train/val gap, the largest of any stage. The CNN learned spatial-mass
+distribution well (MSE-best variant in the vision-only ablation, 2.67) but
+contributed nothing to ρ on top of `task`.
+
+**Stage 4 evidence**: depth helped MSE on 2 of 5 scenes (workshop,
+cluttered) and did not help ρ anywhere. Across multi-scene runs,
+**ρ on scene_level2 has been the recurring weak link** (0.27 in Stage 5,
+0.23 in Stage 4) — it stayed stuck even when we added the cleanest
+geometric signal we have.
+
+Both findings point at the same diagnosis: pixel-derived feature richness
+is a real lever, but our small encoder can't extract it without
+overfitting. A **frozen** pretrained backbone targets exactly this — it
+imports features learned on ~140M images and bypasses the
+small-model-on-small-data problem entirely.
+
+### Design (frozen features, precomputed)
+
+- **Variant**: DINOv2 ViT-S/14 (~22M params, 384-dim CLS embedding,
+  256 patch tokens at 224×224 input). Smallest available; fast enough to
+  precompute features for all 16,532 configs in <10 min on the RTX 3070.
+- **Mode**: frozen, no fine-tuning. Avoids the wall-clock + overfitting
+  problems of training a 22M backbone on 14k configs.
+- **Feature cache**: one-time pass over `pre_rgb` for all configs →
+  `cache/dinov2/<scene>/<task>/<exp_id>.npy`. Storage with CLS-only:
+  ~25 MB total. With patch grid (256 × 384): ~6 GB — borderline; start
+  with CLS-only.
+- **Model wiring**: replace `_CNNEncoder` in `HeatmapVisionConvDecoder`
+  with `Linear(384 → rgb_emb_dim=128)` consuming the cached CLS vector.
+  Everything downstream (state fusion, conv decoder, masked loss) stays
+  identical.
+- **Dataset wiring**: add `include_dinov2` flag to `HeatmapDataset`;
+  `_read_rgb` is replaced by an `_read_dinov2_feature` cache lookup
+  when the flag is set.
+
+### Expected payoff
+
+- **Stage 4 was a partial win** — DINOv2 should make it a fuller win.
+  Geometric variance that helped workshop / cluttered with raw depth
+  should also help level2 / grocery once the encoder has the *capacity*
+  to use the signal.
+- **scene_level2 ρ specifically** is the most likely scene to break the
+  multi-scene ceiling. DINOv2 has the right inductive bias for cluttered
+  small objects (trained on natural-image diversity); level2's tightly
+  packed obstacle layout is exactly the regime where richer pixel
+  features should help disambiguate per-obstacle ranks.
+
+### Costs and risks
+
+- **Domain mismatch**: DINOv2 is trained on natural images; our scenes
+  are MuJoCo-rendered. Real risk, but DINOv2 is notoriously domain-robust
+  on segmentation / depth / matching. Worth a one-stage test before
+  deeper investment.
+- **Resize**: `pre_rgb` is 480×640; DINOv2 wants 224×224 (16 × 14
+  patches). Letterbox preferred over centre-crop to keep the table edges.
+- **Implementation cost**: ~2 hours.
+  - Hour 1: `scripts/precompute_dinov2.py` + dataset flag + cache layout.
+  - Hour 2: model wiring + smoke test + 200-epoch run.
+- **No-go signal**: if frozen DINOv2 + the existing decoder doesn't beat
+  Stage 5 on level2 ρ, the bottleneck isn't feature richness — it's the
+  structural problem flagged in "Reading the Stage 5 results §6"
+  (level2 obstacles too close together for per-obstacle integrals to
+  discriminate, regardless of feature quality).
+
+### Decision
+
+DINOv2 is the **highest-value next experiment after the multi-scene
+capacity / FiLM levers** if those plateau. Should be Stage 7 — keep the
+ordering: capacity bump → FiLM → per-scene heads → DINOv2.
+
+---
+
+## Stage 9 (proposed) — Loss redesign (Sinkhorn / OT auxiliary)
+
+A direct response to the framing pivot: *now* that we're optimising MSE
+only, what's the cheapest principled way to bring back planner-relevant
+signal *without* abandoning reconstruction? Three loss-family candidates
+were considered (BCE, Soft Dice, Sinkhorn / OT). Sinkhorn is the one
+worth scheduling.
+
+### Why Sinkhorn (and not BCE / Dice)
+
+Our targets are continuous Gaussian-blurred contact density heatmaps,
+not binary masks. That immediately constrains the choices:
+
+- **BCE** treats each cell as a Bernoulli classification — wrong fit for
+  continuous density. Soft-BCE works mathematically but adds nothing
+  beyond MSE on the same normalised target. Skip.
+- **Soft Dice** is scale-invariant — captures *where* mass should land
+  without caring about absolute density. Useful only as `MSE + λ·Dice`
+  where Dice gates spatial support and MSE polishes magnitude. Standard
+  segmentation cocktail. Second priority.
+- **Sinkhorn / OT** directly fixes the diagnosed MSE/ρ decoupling:
+  MSE scores per-cell errors *independently of distance*, so predicting
+  mass 1 cell off costs the same as predicting it 50 cells off.
+  Optimal transport penalises moving mass across cells weighted by
+  spatial distance. That is exactly the right inductive bias for a
+  downstream cost that integrates over obstacle footprints — predicting
+  the *right region* matters more than predicting the *right per-cell
+  value*.
+
+### Two implementations, ordered cheapest-first
+
+#### 9a. Per-obstacle integral auxiliary loss (~30 min) — **first try**
+
+Cheapest principled option. We already compute
+`integrate_per_entity(pred, fps)` and `integrate_per_entity(target, fps)`
+during eval. Add an L1/L2 term on the per-obstacle score *vector
+difference* during training:
+
+```
+L_total = masked_MSE(pred, target)
+        + λ_obs * || obstacle_scores(pred) − obstacle_scores(target) ||
+```
+
+This is "Sinkhorn where the support is the obstacle footprints" — a
+much cheaper, exactly-on-target version. Tunes the precise number the
+planner consumes (per-entity integrated risk).
+
+Implementation: lift `entity_footprints(...)` and
+`integrate_per_entity(...)` into a torch-friendly batched op (currently
+numpy / per-sample). About 30 minutes. Try `λ_obs = 0.1, 0.5, 1.0`
+sweep on multi-scene + task baseline.
+
+#### 9b. Coarse-pooled Sinkhorn (~3 hours) — fall-back if 9a plateaus
+
+If the cheap obstacle-integral loss helps but plateaus, the fuller
+Sinkhorn variant catches *spatial structure between* obstacles too
+(which obstacle-integrals discard).
+
+- **Library**: `geomloss` (PyTorch, GPU-friendly, supports Sinkhorn
+  approximation with ε regularisation). Add as dep, no implementation
+  required.
+- **Coarse-pool first**: full-resolution Sinkhorn at 12k cells × batch
+  128 is too expensive. Avg-pool predictions and targets 8× (e.g.
+  workshop's `(93, 133)` → `(12, 17)` ≈ 200 cells). That's the
+  obstacle-region scale anyway — sub-cm precision is MSE's job.
+- **Loss combination**: `L = masked_MSE + λ_ot · Sinkhorn(pool(pred),
+  pool(target))` with `ε = 0.01` Sinkhorn regularisation.
+- **Dataset**: keep current targets unchanged.
+
+### Costs and risks
+
+- **9a (obstacle-integral)**: ~30 min implementation. Risk: if MSE/ρ
+  decoupling is intrinsic (level2 obstacle overlap, see Stage 5 §6),
+  obstacle-integral loss won't fix the structural problem either —
+  we'll find that out cheaply.
+- **9b (Sinkhorn)**: ~3 hours including ε / λ_ot tuning. Sinkhorn is
+  numerically tricky at small ε; at large ε it collapses to MSE. Three
+  λ_ot values × two ε values = 6 short runs to sweep.
+- **Both**: the framing-pivot decision says we don't *want* to optimise
+  ρ during training right now. These additions only get scheduled
+  *after* MSE plateaus across the multi-scene capacity / FiLM / DINOv2
+  levers; otherwise we're optimising downstream signal before
+  reconstruction is done.
+
+### Decision
+
+**Defer 9a/9b until:**
+- Multi-scene capacity bump (action item from Stage 5) is done
+- Scene FiLM is tested
+- DINOv2 (Stage 7) has been evaluated
+- The reconstruction story has a clear plateau
+
+When that plateau hits, **9a is the right experiment first** — almost
+free, exactly aligned with the planner cost, and a clean A/B against the
+pure-MSE baseline. 9b only if 9a delivers but the ceiling is still
+loose.
+
+---
+
 ## Things explicitly held off
 
-- **Transformers / large pretrained backbones** — dataset is 16k configs, not
-  16M. Small CNN + MLP is the right size class.
+- **Training a vision transformer from scratch** — dataset is 16k configs,
+  not 16M. Small CNN + MLP is the right size class for trained-from-scratch
+  components. *Frozen* pretrained backbones (e.g. DINOv2 features
+  precomputed once) are a separate question — see "DINOv2 consideration
+  (proposed Stage 7)" above.
+- **BCE / Soft Dice losses** — both considered as Stage 9 alternatives;
+  see that section. BCE is the wrong fit for continuous density targets;
+  Dice is only useful in combination with MSE and is lower-priority than
+  the obstacle-integral / Sinkhorn options.
 - **Per-entity output heads** — we already have `integrate_per_entity`
   post-hoc; collapsing in the model would lose spatial info we can't recover.
 - **End-to-end planner training** — predictor first; the planner cost
