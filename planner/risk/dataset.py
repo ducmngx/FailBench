@@ -60,6 +60,7 @@ class HeatmapDataset(Dataset):
                  include_rgb: bool = False,
                  include_depth: bool = False,
                  include_dinov2: bool = False,
+                 dinov2_mode: str = "cls",
                  rgb_size: tuple[int, int] = (96, 128),
                  depth_clip: tuple[float, float] = (0.05, 2.0),
                  dinov2_cache_dir: Path | str | None = None,
@@ -86,10 +87,14 @@ class HeatmapDataset(Dataset):
         self.include_rgb = bool(include_rgb)
         self.include_depth = bool(include_depth)
         self.include_dinov2 = bool(include_dinov2)
+        self.dinov2_mode = str(dinov2_mode)
         self.rgb_size = (int(rgb_size[0]), int(rgb_size[1]))   # (H, W)
         self.depth_clip = (float(depth_clip[0]), float(depth_clip[1]))
-        self.dinov2_cache_dir = Path(dinov2_cache_dir) if dinov2_cache_dir is not None \
-            else Path("cache/dinov2") / scene
+        if dinov2_cache_dir is not None:
+            self.dinov2_cache_dir = Path(dinov2_cache_dir)
+        else:
+            base = "cache/dinov2" if self.dinov2_mode == "cls" else "cache/dinov2_patch4x4"
+            self.dinov2_cache_dir = Path(base) / scene
         self.trajs_dir = Path(trajs_dir) if trajs_dir is not None \
             else Path("scenes") / scene / "trajs"
 
@@ -310,6 +315,7 @@ class MultiSceneHeatmapDataset(Dataset):
                  include_rgb: bool = False,
                  include_depth: bool = False,
                  include_dinov2: bool = False,
+                 dinov2_mode: str = "cls",
                  rgb_size: tuple[int, int] = (96, 128),
                  dinov2_cache_root: Path | str | None = None,
                  max_grid_shape: tuple[int, int] | None = None,
@@ -322,8 +328,12 @@ class MultiSceneHeatmapDataset(Dataset):
         self.include_rgb = bool(include_rgb)
         self.include_depth = bool(include_depth)
         self.include_dinov2 = bool(include_dinov2)
-        self.dinov2_cache_root = Path(dinov2_cache_root) if dinov2_cache_root is not None \
-            else Path("cache/dinov2")
+        self.dinov2_mode = str(dinov2_mode)
+        if dinov2_cache_root is not None:
+            self.dinov2_cache_root = Path(dinov2_cache_root)
+        else:
+            self.dinov2_cache_root = (Path("cache/dinov2") if self.dinov2_mode == "cls"
+                                       else Path("cache/dinov2_patch4x4"))
 
         # Build a unified task vocabulary across all scenes (with scene prefix
         # to avoid name collisions like clean_nominal in level2 vs kitchen).
@@ -354,6 +364,7 @@ class MultiSceneHeatmapDataset(Dataset):
                 include_rgb=include_rgb,
                 include_depth=include_depth,
                 include_dinov2=include_dinov2,
+                dinov2_mode=dinov2_mode,
                 rgb_size=rgb_size,
                 dinov2_cache_dir=(self.dinov2_cache_root / s) if include_dinov2 else None,
             )

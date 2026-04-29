@@ -173,6 +173,74 @@ class HeatmapDINOConvDecoder(nn.Module):
         return z.squeeze(1)
 
 
+class HeatmapDINOPatchConvDecoder(nn.Module):
+    """Stage 7 (patch variant): state vector + DINOv2 patch tokens → heatmap.
+
+    Vision input is the cached pooled patch grid `(P, P, 384)` (e.g. P=4, from
+    averaging the 16×16 grid down to 4×4). We treat it as a feature map,
+    permute to channels-first, and run a small conv over it before fusion
+    with the state.
+    """
+    def __init__(self, state_dim: int = 76,
+                 grid_shape: tuple[int, int] = (93, 133),
+                 hidden: tuple[int, ...] = (256, 512),
+                 feat_ch: int = 64,
+                 feat_hw: tuple[int, int] = (6, 9),
+                 decoder_channels: tuple[int, ...] = (32, 16, 8),
+                 dino_dim: int = 384,
+                 dino_patch_grid: int = 4,
+                 vis_emb_dim: int = 128,
+                 dropout: float = 0.1):
+        super().__init__()
+        self.grid_shape = grid_shape
+        self.feat_ch = feat_ch
+        self.feat_hw = feat_hw
+        self.dino_dim = dino_dim
+        self.dino_patch_grid = dino_patch_grid
+
+        # Small conv head over the patch grid: 384 → 128 channels with 3×3,
+        # then flatten + linear to vis_emb_dim. Patch-aware.
+        self.vis_conv = nn.Sequential(
+            nn.Conv2d(dino_dim, 128, 3, padding=1), nn.SiLU(),
+            nn.Conv2d(128, 64, 3, padding=1), nn.SiLU(),
+        )
+        self.vis_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * dino_patch_grid * dino_patch_grid, vis_emb_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+        )
+
+        enc: list[nn.Module] = []
+        prev = state_dim + vis_emb_dim
+        for h in hidden:
+            enc += [nn.Linear(prev, h), nn.SiLU(), nn.Dropout(dropout)]
+            prev = h
+        enc.append(nn.Linear(prev, feat_ch * feat_hw[0] * feat_hw[1]))
+        self.encoder = nn.Sequential(*enc)
+
+        blocks: list[nn.Module] = []
+        prev_ch = feat_ch
+        for ch in decoder_channels:
+            blocks.append(_UpBlock(prev_ch, ch))
+            prev_ch = ch
+        self.decoder = nn.Sequential(*blocks)
+        self.head = nn.Conv2d(prev_ch, 1, 3, padding=1)
+
+    def forward(self, state: torch.Tensor, dino_patches: torch.Tensor) -> torch.Tensor:
+        # dino_patches arrives as (B, P, P, 384) from the dataset cache.
+        # Permute to channels-first for Conv2d.
+        v = dino_patches.permute(0, 3, 1, 2).contiguous()
+        v = self.vis_conv(v)
+        v = self.vis_fc(v)
+        z = self.encoder(torch.cat([state, v], dim=1))
+        z = z.view(-1, self.feat_ch, *self.feat_hw)
+        z = self.decoder(z)
+        z = self.head(z)
+        z = F.interpolate(z, size=self.grid_shape, mode="bilinear", align_corners=False)
+        return z.squeeze(1)
+
+
 class HeatmapConvDecoder(nn.Module):
     """MLP encoder → small feature map → conv-upsample → bilinear-resize to grid.
 

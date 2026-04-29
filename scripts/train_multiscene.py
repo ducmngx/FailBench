@@ -41,7 +41,8 @@ from planner.risk.dataset import (
     split_multiscene_traj_keys,
 )
 from planner.risk.model import (
-    HeatmapConvDecoder, HeatmapVisionConvDecoder, HeatmapDINOConvDecoder)
+    HeatmapConvDecoder, HeatmapVisionConvDecoder,
+    HeatmapDINOConvDecoder, HeatmapDINOPatchConvDecoder)
 
 
 DEFAULT_SCENES = ["scene_level2", "scene_kitchen", "scene_workshop",
@@ -68,8 +69,10 @@ def parse_args():
     ap.add_argument("--include_depth", action="store_true",
                     help="stack pre_depth as a 4th channel on pre_rgb (Stage 4)")
     ap.add_argument("--include_dinov2", action="store_true",
-                    help="use frozen DINOv2 ViT-S/14 CLS features from cache/dinov2/ (Stage 7); "
+                    help="use frozen DINOv2 ViT-S/14 features from cache (Stage 7); "
                          "mutually exclusive with --include_rgb")
+    ap.add_argument("--dinov2_mode", type=str, default="cls", choices=["cls", "patch"],
+                    help="'cls' (384-d CLS token) or 'patch' (4×4×384 pooled patch grid)")
     ap.add_argument("--capacity", type=str, default="small", choices=["small", "big"],
                     help="'small' = original Stage 0-5 widths; 'big' = widened encoder + 4th UpBlock (R1)")
     return ap.parse_args()
@@ -86,7 +89,7 @@ def main():
     if args.output_dir is None:
         ts = time.strftime("%Y%m%d-%H%M%S")
         if args.include_dinov2:
-            suffix = "dino"
+            suffix = f"dino_{args.dinov2_mode}"
         elif args.include_rgb:
             suffix = "vision"
         else:
@@ -116,6 +119,7 @@ def main():
         include_rgb=args.include_rgb,
         include_depth=args.include_depth,
         include_dinov2=args.include_dinov2,
+        dinov2_mode=args.dinov2_mode,
     )
     print(f"loaded {len(full)} configs total, "
           f"max_grid={full.max_grid_shape}, input_dim={full.input_dim}, "
@@ -141,6 +145,7 @@ def main():
                      include_rgb=args.include_rgb,
                      include_depth=args.include_depth,
                      include_dinov2=args.include_dinov2,
+                     dinov2_mode=args.dinov2_mode,
                      task_vocab=full.task_vocab,
                      max_grid_shape=full.max_grid_shape)
     train_ds = MultiSceneHeatmapDataset(args.dataset, scenes,
@@ -171,11 +176,18 @@ def main():
     else:
         cap_kwargs = dict()  # defaults match Stage 0-5
     if args.include_dinov2:
-        model = HeatmapDINOConvDecoder(state_dim=in_dim,
-                                        grid_shape=full.max_grid_shape,
-                                        **cap_kwargs).to(args.device)
-        print(f"model: dino-conv ({args.capacity}), state_dim={in_dim}, "
-              f"output_grid={full.max_grid_shape}")
+        if args.dinov2_mode == "patch":
+            model = HeatmapDINOPatchConvDecoder(state_dim=in_dim,
+                                                 grid_shape=full.max_grid_shape,
+                                                 **cap_kwargs).to(args.device)
+            print(f"model: dino-patch-conv ({args.capacity}), state_dim={in_dim}, "
+                  f"output_grid={full.max_grid_shape}")
+        else:
+            model = HeatmapDINOConvDecoder(state_dim=in_dim,
+                                            grid_shape=full.max_grid_shape,
+                                            **cap_kwargs).to(args.device)
+            print(f"model: dino-cls-conv ({args.capacity}), state_dim={in_dim}, "
+                  f"output_grid={full.max_grid_shape}")
     elif args.include_rgb:
         rgb_in_ch = 4 if args.include_depth else 3
         model = HeatmapVisionConvDecoder(state_dim=in_dim,

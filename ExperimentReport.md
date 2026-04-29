@@ -1260,31 +1260,101 @@ task*.
   or last-block-only fine-tuning. Substantial compute. Would address
   domain mismatch directly.
 
-#### Decision
+#### Decision (CLS run)
 
-R3's failure is a **clean negative result**: frozen DINOv2 CLS does
-not improve over a small from-scratch CNN with depth on this task.
-That's worth knowing. We do *not* take the (relatively expensive)
-patch-token / fine-tuning paths immediately — the simpler levers
-(R1+vision) are doing the work.
+R3-CLS's failure is a **clean negative result**: frozen DINOv2 CLS does
+not improve over a small from-scratch CNN with depth on this task. We
+ran one follow-up — the patch-token version — to test whether the
+result was about CLS specifically or about pretrained vision generally.
 
-Per the round-level decision tree: R1 passed, R3 failed,
-**reconstruction-side levers have effectively plateaued at
-val_destd_avg = 0.542**. The action items are now:
+### Stage 7 follow-up — DINOv2 patch tokens (R3-patch)
 
-1. **Run offline ρ eval** on the R1+vision best checkpoint — that's the
-   actual measurement of whether the round delivered planner-relevant
-   gains, not just MSE wins.
-2. **Skip R2 (FiLM) and R4 (per-scene heads) for now** — neither
-   targets a diagnosed failure mode of R1+vision. R2's "fix level2 ρ"
-   motivation got partly addressed (level2 MSE −73%), and R4's
-   "recover within-scene specialist quality" is moot if the round
-   already matches single-scene Stage 1's MSE on every scene.
-3. **Pivot to Stage 9a (obstacle-integral auxiliary loss)** as the
-   *next* round's first experiment. Reconstruction has stopped
-   delivering — time to start optimising the planner-relevant metric
-   directly. 9a is ~30 minutes of code and is exactly the right
-   experiment for "MSE plateau, ρ still matters."
+After the CLS run failed, we ran a second variant testing the
+hypothesis that **CLS was the wrong feature, not DINOv2 itself**.
+
+#### Setup delta from R3-CLS
+
+- `precompute_dinov2.py --mode patch --patch_pool 4`: extract the 16×16
+  patch token grid, average-pool to 4×4, save `(4, 4, 384)` per config.
+  Cache: 453 MB (was 66 MB for CLS), ~95 s on RTX 3070.
+- `HeatmapDINOPatchConvDecoder`: vision path is now a 2-layer ConvNet
+  over the 4×4×384 patch grid (`Conv2d(384→128, k=3) → SiLU → Conv2d(128→64, k=3) → SiLU → Flatten → Linear → 128-dim emb`).
+  ~470k vision params (vs CLS's ~50k Linear projection).
+- Dataset: `dinov2_mode={cls,patch}` flag picks cache dir and feature
+  shape. Trainer: same `--include_dinov2` flag, new `--dinov2_mode patch`.
+- Same 200 epochs, capacity=big, seed 0.
+
+#### Results — multi-scene (200 epochs, seed 0)
+
+Run dir: `runs/heatmap_multi_dino_patchBIG+task+dinov2_20260429-110337/`
+
+| metric | R1 + vision | R3 CLS | **R3 patch** |
+|---|---|---|---|
+| val_destd_avg | **0.542** | 0.605 | **0.564** |
+| best epoch | 115 | 149 | 134 |
+| ~converged epoch | 109 | 94 | 72 |
+| final train_loss | 0.102 | 0.096 | 0.100 |
+
+| scene | R1+vision | R3 CLS | **R3 patch** |
+|---|---|---|---|
+| level2     | −73% | −71% | **−76%** ← best level2 ever |
+| kitchen    | −67% | −65% | −64% |
+| workshop   | −26% | −26% | −24% |
+| grocery    | −18% | −16% | −16% |
+| cluttered  | **−45%** | −20% | −39% |
+
+#### Reading
+
+**Hypothesis 1 (CLS was the wrong feature) — confirmed.** Patch tokens
+recover most of what CLS lost: cluttered −20% → −39%, val_destd_avg
+0.605 → 0.564. The spatial-token grid carries per-region information
+that a single CLS summary cannot.
+
+**Hypothesis 2 (depth-loss explained cluttered's regression) — also
+confirmed.** Patch closes most but not all of the cluttered gap
+(−39% vs R1+vision's −45%). The remaining 6 points is approximately
+the per-config geometric signal that depth carries — DINOv2 RGB-only
+can't recover it without a parallel depth path.
+
+**Surprise**: patch DINOv2 **beats R1+vision on scene_level2** (−76%
+vs −73%) — the best level2 reduction we've seen across any stage.
+Likely reading: the 4×4 patch grid covers the level2 workspace
+densely enough that *which patch the arm is in* gives the model a
+direct regional cue, where the small CNN's mid-resolution feature
+maps blur across level2's tightly packed obstacles.
+
+#### What R3 settled
+
+- DINOv2 patch >> CLS on this task. CLS-only is not a useful starting
+  point for spatial prediction; patch tokens are.
+- Frozen DINOv2 patch ≈ small CNN + depth, with scene-dependent
+  trade-offs (better on level2, worse on cluttered).
+- Best of both worlds would be **DINOv2 patch + parallel depth CNN** —
+  but that's a hybrid model build, not a "single change" experiment.
+  Not in this round.
+
+#### Round-level decision
+
+Stage 7 (DINOv2) overall verdict: patch tokens are competitive,
+not transformative. R1 + vision is still the best end-to-end
+multi-scene baseline at val_destd_avg = **0.542**. We do **not**
+adopt patch DINOv2 as the new default for the next round, but the
+result tells us:
+1. Pretrained features have a real contribution (patch beat the
+   small-CNN approach on level2 specifically).
+2. Depth + RGB CNN is doing real geometric work that DINOv2 alone
+   doesn't replicate.
+3. The natural Stage 7-next would be a hybrid (DINOv2 patch + small
+   depth CNN), parked for a future round if reconstruction becomes
+   the priority again.
+
+Reconstruction-side levers have plateaued at val_destd_avg ≈ 0.54.
+Action items unchanged from the CLS-only post-stage:
+
+1. **Run offline ρ eval** on R1+vision and R3-patch best checkpoints
+   — that's the actual planner-relevant measurement.
+2. **Pivot to Stage 9a** (obstacle-integral auxiliary loss) as the
+   next round's first experiment.
 
 ---
 
