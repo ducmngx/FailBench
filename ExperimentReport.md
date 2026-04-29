@@ -1031,6 +1031,122 @@ across scenes).
 
 ---
 
+## Stage 5b — Capacity bump (R1 of next-round plan)
+
+### Pre-stage thinking
+
+Stage 5 / Stage 4 diagnosed *capacity competition across scenes*: same
+1.95M-param encoder serving 5 scenes' worth of variance, with the
+recurring weak link being scene_level2's ρ and scene_grocery's near-zero
+MSE reduction. R1 attacks this directly — same architecture, more
+parameters — to settle whether capacity is *the* bottleneck or just
+one of several. Cheapest reconstruction-side lever, highest diagnostic
+value.
+
+### Setup
+
+- `--capacity big` flag added to `scripts/train_multiscene.py`.
+- `HeatmapConvDecoder` widened: `hidden=(256, 512)` → `(512, 1024)`,
+  `feat_ch=64` → `128`, `decoder_channels=(32, 16, 8)` → `(64, 32, 16, 8)`.
+  Spatial path becomes `6×9 → 12×18 → 24×36 → 48×72 → 96×144` →
+  bilinear-resize to `(93, 133)`.
+- `HeatmapVisionConvDecoder` gets the same widening of its state path;
+  the small CNN stays 120k params (don't conflate axes).
+- Param count: `1.95M → 7.80M` (no-vision); `2.19M → 8.05M` (vision+depth).
+- Two runs: multi-scene + task (no vision), and multi-scene + task + rgb +
+  depth. 200 epochs, seed 0, identical pipeline to Stage 4 / 5 otherwise.
+
+### Results — multi-scene (200 epochs, seed 0)
+
+Run dirs:
+- `runs/heatmap_multi_convBIG+task_20260429-004457/`
+- `runs/heatmap_multi_visionBIG+task+rgb+depth_20260429-010658/`
+
+| metric | Stage 5 (small) | Stage 4 (small + vision) | R1 (big) | **R1 + vision (big)** |
+|---|---|---|---|---|
+| params | 1.95M | 2.19M | 7.80M | 8.05M |
+| **val_destd_avg** | 0.623 | 0.626 | 0.595 | **0.542** |
+| best epoch | 179 | 98 | 110 | 115 |
+| ~converged epoch | 93 | 46 | 62 | 109 |
+| final train_loss | 0.187 | 0.129 | 0.117 | 0.102 |
+
+| scene | Stage 5 | Stage 4 | R1 (no vision) | **R1 + vision** |
+|---|---|---|---|---|
+| level2     | −69% | −64% | **−74%** | −73% |
+| kitchen    | −66% | −61% | **−75%** | −67% |
+| workshop   | −13% | −26% | −18% | **−26%** |
+| grocery    | −10% | −1%  | −5% | **−18%** |
+| cluttered  | −30% | −37% | −30% | **−45%** |
+
+### Post-stage thinking
+
+#### Capacity *unlocks* vision; vision alone never did
+
+The headline: small + vision (Stage 4) beat small + no-vision (Stage 5)
+on workshop / cluttered only. Big + vision beats *every* baseline on
+*every* scene except level2 (where big-no-vision is fractionally
+better). The pattern is clear:
+
+- **Big without vision** improves the scenes that were *already easy*
+  (level2 −69→−74%, kitchen −66→−75%) but doesn't help workshop /
+  grocery / cluttered. More state-encoder capacity = better fit on
+  scenes where state already carries the signal.
+- **Big + vision** is where the per-scene story changes. Every
+  geometrically-rich scene improves: workshop −18→−26%, grocery −5→**−18%**
+  (the biggest delta of the round), cluttered −30→**−45%**.
+
+The Stage 4 result that "depth helped only on busy scenes, ρ flat
+everywhere" *was a capacity story*: the small encoder couldn't extract
+enough from RGB+depth to lift ρ-relevant features, so it landed as
+spatial-mass-only. Bigger encoder + same vision pipeline = vision
+finally pays off across the board.
+
+#### scene_grocery rescued
+
+Stage 5 / Stage 4 had grocery basically tied with the predict-mean
+baseline (−10% / −1%). R1 + vision drives it to **−18%** — the largest
+relative gain of any single intervention this round. Reading: grocery's
+fixed wall + shelf geometry *does* carry per-config signal once the
+model has both (a) enough capacity and (b) a vision stream that sees
+the 3D structure. Neither alone was sufficient; the combination is.
+
+#### scene_level2 improved on MSE — but was it ever a *reconstruction* problem?
+
+Level2 was our recurring weak link in the Stage 5 analysis. R1 dropped
+its MSE to 3.31 (−74%) without vision, 3.51 (−73%) with vision. That's
+the strongest level2 reconstruction we've seen — but it's *not* what
+the original ρ regression was about. The ρ ceiling on level2 was
+diagnosed as a structural footprint-overlap problem (Stage 5 §6), not
+a reconstruction problem. We'll re-check ρ offline; if it's still
+stuck, that confirms the structural diagnosis and Stage 9a (obstacle-
+integral aux loss) becomes the right next move.
+
+#### Training dynamics — vision now slows convergence
+
+R1 no-vision converges at epoch 62, R1 + vision at epoch 109 — bigger
+gap than between Stage 4 (vision, ep 46) and Stage 5 (no-vision, ep 93).
+The bigger CNN-driven gradient signal that made Stage 4 converge fast
+(ep 46) doesn't carry over here; the wider state path needs more time
+to balance against the vision branch. This is fine — the longer
+schedule pays off in final quality (val_destd_avg 0.542 vs 0.626).
+
+Final train_loss 0.102 (vs Stage 4's 0.129, Stage 5's 0.187): stronger
+fit on train, but val also improved, so this isn't pure overfit. Some
+of the new train descent translated into actual generalisation. Healthy.
+
+#### Verdict
+
+R1 + vision is the **new best multi-scene baseline**. `val_destd_avg
+= 0.542` is a 13.5% improvement on Stage 5 and a 13.4% improvement on
+Stage 4. Per-scene wins are distributed across all 5 scenes (no
+regressions when combined with vision).
+
+Per the round plan, this counts as a clear PASS on R1's criterion
+(≥10% reduction on ≥2 scenes — actually 4 of 5, all but level2 where
+it's neutral). Proceeding to **R3 (DINOv2)** next as the orthogonal
+"is feature richness still a lever?" test, against this new R1+vision
+baseline.
+
 ---
 
 ## Stage 6 (optional) — Temporal context

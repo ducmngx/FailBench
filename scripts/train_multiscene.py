@@ -66,6 +66,8 @@ def parse_args():
     ap.add_argument("--include_rgb", action="store_true")
     ap.add_argument("--include_depth", action="store_true",
                     help="stack pre_depth as a 4th channel on pre_rgb (Stage 4)")
+    ap.add_argument("--capacity", type=str, default="small", choices=["small", "big"],
+                    help="'small' = original Stage 0-5 widths; 'big' = widened encoder + 4th UpBlock (R1)")
     return ap.parse_args()
 
 
@@ -78,6 +80,8 @@ def main():
     if args.output_dir is None:
         ts = time.strftime("%Y%m%d-%H%M%S")
         suffix = "vision" if args.include_rgb else "conv"
+        if args.capacity == "big":
+            suffix += "BIG"
         if args.include_goal:
             suffix += "+goal"
         if args.include_task:
@@ -144,17 +148,26 @@ def main():
 
     # ---- Model: built around max_grid_shape ----
     in_dim = full.input_dim
+    if args.capacity == "big":
+        # R1 widening: bigger encoder, more decoder channels, 4th UpBlock.
+        # Spatial path becomes 6×9 → 12×18 → 24×36 → 48×72 → 96×144 → bilinear.
+        cap_kwargs = dict(hidden=(512, 1024), feat_ch=128,
+                          decoder_channels=(64, 32, 16, 8))
+    else:
+        cap_kwargs = dict()  # defaults match Stage 0-5
     if args.include_rgb:
         rgb_in_ch = 4 if args.include_depth else 3
         model = HeatmapVisionConvDecoder(state_dim=in_dim,
                                           grid_shape=full.max_grid_shape,
-                                          rgb_in_ch=rgb_in_ch).to(args.device)
-        print(f"model: vision-conv, state_dim={in_dim}, rgb_in_ch={rgb_in_ch}, "
-              f"output_grid={full.max_grid_shape}")
+                                          rgb_in_ch=rgb_in_ch,
+                                          **cap_kwargs).to(args.device)
+        print(f"model: vision-conv ({args.capacity}), state_dim={in_dim}, "
+              f"rgb_in_ch={rgb_in_ch}, output_grid={full.max_grid_shape}")
     else:
         model = HeatmapConvDecoder(in_dim=in_dim,
-                                    grid_shape=full.max_grid_shape).to(args.device)
-        print(f"model: conv, in_dim={in_dim}, output_grid={full.max_grid_shape}")
+                                    grid_shape=full.max_grid_shape,
+                                    **cap_kwargs).to(args.device)
+        print(f"model: conv ({args.capacity}), in_dim={in_dim}, output_grid={full.max_grid_shape}")
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  {n_params/1e6:.2f}M params; device={args.device}")
 
