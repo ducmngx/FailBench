@@ -59,8 +59,10 @@ class HeatmapDataset(Dataset):
                  include_task: bool = False,
                  include_rgb: bool = False,
                  include_depth: bool = False,
+                 include_dinov2: bool = False,
                  rgb_size: tuple[int, int] = (96, 128),
                  depth_clip: tuple[float, float] = (0.05, 2.0),
+                 dinov2_cache_dir: Path | str | None = None,
                  trajs_dir: Path | str | None = None,
                  task_vocab: Sequence[str] | None = None):
         """`traj_keys` is a list of (task_id, traj_id) tuples to keep; None = all.
@@ -83,8 +85,11 @@ class HeatmapDataset(Dataset):
         self.include_task = bool(include_task)
         self.include_rgb = bool(include_rgb)
         self.include_depth = bool(include_depth)
+        self.include_dinov2 = bool(include_dinov2)
         self.rgb_size = (int(rgb_size[0]), int(rgb_size[1]))   # (H, W)
         self.depth_clip = (float(depth_clip[0]), float(depth_clip[1]))
+        self.dinov2_cache_dir = Path(dinov2_cache_dir) if dinov2_cache_dir is not None \
+            else Path("cache/dinov2") / scene
         self.trajs_dir = Path(trajs_dir) if trajs_dir is not None \
             else Path("scenes") / scene / "trajs"
 
@@ -177,6 +182,13 @@ class HeatmapDataset(Dataset):
             parts.append(one_hot)
         return np.concatenate(parts)
 
+    def _read_dinov2(self, row: _Row) -> np.ndarray:
+        """Returns the cached (384,) DINOv2 CLS feature for this row."""
+        # row.npz_path is .../<scene>/<task>/<exp_id>.npz; cache mirrors task dir.
+        task_name = row.npz_path.parent.name
+        path = self.dinov2_cache_dir / task_name / (row.npz_path.stem + ".npy")
+        return np.load(path).astype(np.float32, copy=False)
+
     def _read_rgb(self, row: _Row) -> np.ndarray:
         """Returns (C, H, W) float32. C=3 for RGB, C=4 if include_depth (RGB+D).
 
@@ -208,6 +220,9 @@ class HeatmapDataset(Dataset):
         if self.stats is not None:
             x = (x - self.stats.x_mean) / self.stats.x_std
             y = (y - self.stats.y_mean) / self.stats.y_std
+        if self.include_dinov2:
+            feat = self._read_dinov2(row)
+            return torch.from_numpy(x), torch.from_numpy(feat), torch.from_numpy(y), i
         if self.include_rgb:
             rgb = self._read_rgb(row)
             return torch.from_numpy(x), torch.from_numpy(rgb), torch.from_numpy(y), i
@@ -294,7 +309,9 @@ class MultiSceneHeatmapDataset(Dataset):
                  include_task: bool = False,
                  include_rgb: bool = False,
                  include_depth: bool = False,
+                 include_dinov2: bool = False,
                  rgb_size: tuple[int, int] = (96, 128),
+                 dinov2_cache_root: Path | str | None = None,
                  max_grid_shape: tuple[int, int] | None = None,
                  task_vocab: Sequence[str] | None = None):
         self.dataset_root = Path(dataset_root)
@@ -304,6 +321,9 @@ class MultiSceneHeatmapDataset(Dataset):
         self.include_task = bool(include_task)
         self.include_rgb = bool(include_rgb)
         self.include_depth = bool(include_depth)
+        self.include_dinov2 = bool(include_dinov2)
+        self.dinov2_cache_root = Path(dinov2_cache_root) if dinov2_cache_root is not None \
+            else Path("cache/dinov2")
 
         # Build a unified task vocabulary across all scenes (with scene prefix
         # to avoid name collisions like clean_nominal in level2 vs kitchen).
@@ -333,7 +353,9 @@ class MultiSceneHeatmapDataset(Dataset):
                 include_task=False,
                 include_rgb=include_rgb,
                 include_depth=include_depth,
+                include_dinov2=include_dinov2,
                 rgb_size=rgb_size,
+                dinov2_cache_dir=(self.dinov2_cache_root / s) if include_dinov2 else None,
             )
 
         # Determine max grid shape across involved scenes
@@ -434,6 +456,14 @@ class MultiSceneHeatmapDataset(Dataset):
             y_pad_std[:ny, :nx] = (y_pad[:ny, :nx] - st.y_mean) / st.y_std
             y_pad = y_pad_std
         scene_idx = self.scene_to_idx[scene]
+        if self.include_dinov2:
+            feat = sd._read_dinov2(row)
+            return (torch.from_numpy(x),
+                    torch.from_numpy(feat),
+                    torch.from_numpy(y_pad),
+                    torch.from_numpy(mask),
+                    scene_idx,
+                    i)
         if self.include_rgb:
             rgb = sd._read_rgb(row)
             return (torch.from_numpy(x),

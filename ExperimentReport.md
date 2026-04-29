@@ -1149,6 +1149,145 @@ baseline.
 
 ---
 
+## Stage 7 — DINOv2 frozen features (R3 of next-round plan)
+
+### Pre-stage thinking
+
+R1 had just delivered our best multi-scene baseline (val_destd_avg
+0.542) by combining capacity + RGB + depth. Stage 7 asks an orthogonal
+question: **is feature richness still a lever beyond what our small CNN
+extracts?** DINOv2 ViT-S/14 trained on ~140M images is the obvious
+import. Frozen, no fine-tuning — the small-data overfitting risk goes
+to zero.
+
+The pre-stage hypothesis: DINOv2 should help on level2 / grocery
+specifically, the scenes where Stage 4's 120k-param CNN couldn't extract
+enough from front_cam to lift ρ. The CLS-only design (384 dim) tests
+whether a single semantic summary is enough; if not, patch tokens
+(256 × 384) would be the next variant.
+
+### Setup
+
+- **Precompute** (`scripts/precompute_dinov2.py`): walk
+  `datasets/v10/<scene>/<task>/exp_*.npz`, letterbox `pre_rgb` to
+  224×224, normalise per ImageNet, forward through frozen `dinov2_vits14`,
+  save CLS token (384,) to `cache/dinov2/<scene>/<task>/<exp_id>.npy`.
+  - 16,538 configs cached, 66 MB total, ~95 s on RTX 3070.
+- **Dataset** (`HeatmapDataset.include_dinov2`, `MultiSceneHeatmapDataset
+  .include_dinov2`): adds a `_read_dinov2` cache loader; `__getitem__`
+  returns the (384,) feature alongside state / target.
+- **Model** (`HeatmapDINOConvDecoder`): state path matches the big-conv
+  decoder. Vision path is `Linear(384 → 128)` + SiLU + Dropout — no CNN.
+  Same 7.8M-param state encoder as R1; vision adds ~50k params.
+- **Trainer** (`scripts/train_multiscene.py --include_dinov2`): mutually
+  exclusive with `--include_rgb`. 200 epochs, capacity=big, seed 0,
+  identical to R1 otherwise.
+
+### Results — multi-scene (200 epochs, seed 0)
+
+Run dir: `runs/heatmap_multi_dinoBIG+task+dinov2_20260429-032743/`
+
+| metric | R1 + vision (small CNN + depth) | **R3 DINOv2 (CLS only)** |
+|---|---|---|
+| val_destd_avg | **0.542** | 0.605 |
+| best epoch | 115 | 149 |
+| ~converged epoch | 109 | 94 |
+| final train_loss | 0.102 | 0.096 |
+
+Per-scene MSE reduction:
+
+| scene | R1+vision | R3 DINOv2 | Δ |
+|---|---|---|---|
+| level2     | **−73%** | −71% | regress |
+| kitchen    | **−67%** | −65% | regress |
+| workshop   | −26% | −26% | flat |
+| grocery    | **−18%** | −16% | regress |
+| cluttered  | **−45%** | **−20%** | major regress |
+
+### Post-stage thinking
+
+R3 **failed its pass criterion** ("scene_level2 OR scene_grocery sees
+≥15% reduction over the strongest of R1/R2"). Every scene was equal-or-
+worse than R1+vision; cluttered regressed by 25 percentage points.
+
+#### Reading 1 — DINOv2 carries semantic signal, not geometric signal
+
+The CLS token is trained for "what category of scene/object is this?" —
+a global summary of *content*, not a localised description of *where
+geometry sits*. For our task:
+
+- `pre_rgb` shows arm + scene background. The CLS feature encodes
+  "this is a tabletop arm scene" robustly across any front_cam image
+  — almost no per-config variance. Within scene_level2, every
+  config's CLS is similar; within multi-scene, it varies *between
+  scenes* but barely *within* a scene.
+- Per-config heatmap prediction needs to know *where the arm is going
+  and what's nearby*. CLS captures none of that.
+- Stage 4's 120k-param CNN, though tiny, was *trained on this exact
+  task* and learned to extract per-config geometry. Frozen DINOv2
+  CLS doesn't have the relevant inductive bias.
+
+#### Reading 2 — Cluttered's regression is the depth signal disappearing
+
+R1+vision had 4-channel `pre_rgb + pre_depth`. R3 has `pre_rgb` only
+(via the DINOv2 pipeline). On scene_cluttered the depth channel is the
+key source of disambiguating signal between obstacles of varied
+heights — losing it removes most of what R1+vision gained on this scene
+(−45% → −20% is exactly the depth contribution gone).
+
+Reading 1 + Reading 2 together: DINOv2 doesn't replace the depth
+signal *and* doesn't add semantic signal worth having on synthetic
+MuJoCo renders.
+
+#### Reading 3 — Domain mismatch is a real factor, but secondary
+
+DINOv2 was trained on natural images. Our scenes are MuJoCo-rendered
+with simple lighting and synthetic textures. Probably some loss to
+domain mismatch — but the bigger story above is that *even on a
+perfectly-rendered natural image, CLS is the wrong feature for this
+task*.
+
+#### What would change R3's verdict
+
+- **DINOv2 patch tokens instead of CLS**. The 256 × 384 grid carries
+  per-region spatial info. Storage cost goes from 25 MB → 6 GB; would
+  need to revisit cache layout. This is the version that *should* beat
+  R1+vision if domain mismatch is the only issue.
+- **DINOv2 + depth together**. Stack DINOv2 features alongside the
+  4-channel CNN; lose nothing on cluttered, gain whatever DINOv2 still
+  contributes elsewhere.
+- **Fine-tuning DINOv2** on our data. With 16k configs we'd want LoRA
+  or last-block-only fine-tuning. Substantial compute. Would address
+  domain mismatch directly.
+
+#### Decision
+
+R3's failure is a **clean negative result**: frozen DINOv2 CLS does
+not improve over a small from-scratch CNN with depth on this task.
+That's worth knowing. We do *not* take the (relatively expensive)
+patch-token / fine-tuning paths immediately — the simpler levers
+(R1+vision) are doing the work.
+
+Per the round-level decision tree: R1 passed, R3 failed,
+**reconstruction-side levers have effectively plateaued at
+val_destd_avg = 0.542**. The action items are now:
+
+1. **Run offline ρ eval** on the R1+vision best checkpoint — that's the
+   actual measurement of whether the round delivered planner-relevant
+   gains, not just MSE wins.
+2. **Skip R2 (FiLM) and R4 (per-scene heads) for now** — neither
+   targets a diagnosed failure mode of R1+vision. R2's "fix level2 ρ"
+   motivation got partly addressed (level2 MSE −73%), and R4's
+   "recover within-scene specialist quality" is moot if the round
+   already matches single-scene Stage 1's MSE on every scene.
+3. **Pivot to Stage 9a (obstacle-integral auxiliary loss)** as the
+   *next* round's first experiment. Reconstruction has stopped
+   delivering — time to start optimising the planner-relevant metric
+   directly. 9a is ~30 minutes of code and is exactly the right
+   experiment for "MSE plateau, ρ still matters."
+
+---
+
 ## Stage 6 (optional) — Temporal context
 
 ### Pre-stage thinking

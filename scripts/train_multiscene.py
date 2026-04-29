@@ -40,7 +40,8 @@ from planner.risk.dataset import (
     MultiSceneHeatmapDataset, fit_multiscene_stats,
     split_multiscene_traj_keys,
 )
-from planner.risk.model import HeatmapConvDecoder, HeatmapVisionConvDecoder
+from planner.risk.model import (
+    HeatmapConvDecoder, HeatmapVisionConvDecoder, HeatmapDINOConvDecoder)
 
 
 DEFAULT_SCENES = ["scene_level2", "scene_kitchen", "scene_workshop",
@@ -66,6 +67,9 @@ def parse_args():
     ap.add_argument("--include_rgb", action="store_true")
     ap.add_argument("--include_depth", action="store_true",
                     help="stack pre_depth as a 4th channel on pre_rgb (Stage 4)")
+    ap.add_argument("--include_dinov2", action="store_true",
+                    help="use frozen DINOv2 ViT-S/14 CLS features from cache/dinov2/ (Stage 7); "
+                         "mutually exclusive with --include_rgb")
     ap.add_argument("--capacity", type=str, default="small", choices=["small", "big"],
                     help="'small' = original Stage 0-5 widths; 'big' = widened encoder + 4th UpBlock (R1)")
     return ap.parse_args()
@@ -76,10 +80,17 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
+    if args.include_dinov2 and args.include_rgb:
+        raise SystemExit("--include_dinov2 and --include_rgb are mutually exclusive")
     scenes = [s.strip() for s in args.scenes.split(",") if s.strip()]
     if args.output_dir is None:
         ts = time.strftime("%Y%m%d-%H%M%S")
-        suffix = "vision" if args.include_rgb else "conv"
+        if args.include_dinov2:
+            suffix = "dino"
+        elif args.include_rgb:
+            suffix = "vision"
+        else:
+            suffix = "conv"
         if args.capacity == "big":
             suffix += "BIG"
         if args.include_goal:
@@ -90,6 +101,8 @@ def main():
             suffix += "+rgb"
         if args.include_depth:
             suffix += "+depth"
+        if args.include_dinov2:
+            suffix += "+dinov2"
         args.output_dir = Path("runs") / f"heatmap_multi_{suffix}_{ts}"
     args.output_dir.mkdir(parents=True, exist_ok=True)
     print(f"writing artifacts to {args.output_dir}")
@@ -102,6 +115,7 @@ def main():
         include_task=args.include_task,
         include_rgb=args.include_rgb,
         include_depth=args.include_depth,
+        include_dinov2=args.include_dinov2,
     )
     print(f"loaded {len(full)} configs total, "
           f"max_grid={full.max_grid_shape}, input_dim={full.input_dim}, "
@@ -126,6 +140,7 @@ def main():
                      include_task=args.include_task,
                      include_rgb=args.include_rgb,
                      include_depth=args.include_depth,
+                     include_dinov2=args.include_dinov2,
                      task_vocab=full.task_vocab,
                      max_grid_shape=full.max_grid_shape)
     train_ds = MultiSceneHeatmapDataset(args.dataset, scenes,
@@ -155,7 +170,13 @@ def main():
                           decoder_channels=(64, 32, 16, 8))
     else:
         cap_kwargs = dict()  # defaults match Stage 0-5
-    if args.include_rgb:
+    if args.include_dinov2:
+        model = HeatmapDINOConvDecoder(state_dim=in_dim,
+                                        grid_shape=full.max_grid_shape,
+                                        **cap_kwargs).to(args.device)
+        print(f"model: dino-conv ({args.capacity}), state_dim={in_dim}, "
+              f"output_grid={full.max_grid_shape}")
+    elif args.include_rgb:
         rgb_in_ch = 4 if args.include_depth else 3
         model = HeatmapVisionConvDecoder(state_dim=in_dim,
                                           grid_shape=full.max_grid_shape,
@@ -217,6 +238,13 @@ def main():
         }, path)
 
     def _forward(batch):
+        if args.include_dinov2:
+            x, feat, y, mask, scene_idx, _i = batch
+            x = x.to(args.device, non_blocking=True)
+            feat = feat.to(args.device, non_blocking=True)
+            y = y.to(args.device, non_blocking=True)
+            mask = mask.to(args.device, non_blocking=True).float()
+            return model(x, feat), y, mask, scene_idx
         if args.include_rgb:
             x, rgb, y, mask, scene_idx, _i = batch
             x = x.to(args.device, non_blocking=True)

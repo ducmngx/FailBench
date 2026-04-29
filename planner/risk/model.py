@@ -119,6 +119,60 @@ class HeatmapVisionConvDecoder(nn.Module):
         return z.squeeze(1)
 
 
+class HeatmapDINOConvDecoder(nn.Module):
+    """Stage 7: state vector + frozen DINOv2 CLS feature → heatmap.
+
+    Vision path is a plain Linear projection of the cached DINOv2 (384,)
+    embedding — the backbone is frozen and offline, so no CNN training,
+    no overfitting risk on the vision side. State path matches
+    `HeatmapVisionConvDecoder`.
+    """
+    def __init__(self, state_dim: int = 76,
+                 grid_shape: tuple[int, int] = (93, 133),
+                 hidden: tuple[int, ...] = (256, 512),
+                 feat_ch: int = 64,
+                 feat_hw: tuple[int, int] = (6, 9),
+                 decoder_channels: tuple[int, ...] = (32, 16, 8),
+                 dino_dim: int = 384,
+                 vis_emb_dim: int = 128,
+                 dropout: float = 0.1):
+        super().__init__()
+        self.grid_shape = grid_shape
+        self.feat_ch = feat_ch
+        self.feat_hw = feat_hw
+
+        self.vis_proj = nn.Sequential(
+            nn.Linear(dino_dim, vis_emb_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+        )
+
+        enc: list[nn.Module] = []
+        prev = state_dim + vis_emb_dim
+        for h in hidden:
+            enc += [nn.Linear(prev, h), nn.SiLU(), nn.Dropout(dropout)]
+            prev = h
+        enc.append(nn.Linear(prev, feat_ch * feat_hw[0] * feat_hw[1]))
+        self.encoder = nn.Sequential(*enc)
+
+        blocks: list[nn.Module] = []
+        prev_ch = feat_ch
+        for ch in decoder_channels:
+            blocks.append(_UpBlock(prev_ch, ch))
+            prev_ch = ch
+        self.decoder = nn.Sequential(*blocks)
+        self.head = nn.Conv2d(prev_ch, 1, 3, padding=1)
+
+    def forward(self, state: torch.Tensor, dino: torch.Tensor) -> torch.Tensor:
+        v = self.vis_proj(dino)
+        z = self.encoder(torch.cat([state, v], dim=1))
+        z = z.view(-1, self.feat_ch, *self.feat_hw)
+        z = self.decoder(z)
+        z = self.head(z)
+        z = F.interpolate(z, size=self.grid_shape, mode="bilinear", align_corners=False)
+        return z.squeeze(1)
+
+
 class HeatmapConvDecoder(nn.Module):
     """MLP encoder → small feature map → conv-upsample → bilinear-resize to grid.
 
