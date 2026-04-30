@@ -21,6 +21,13 @@ external/GraspGen/checkpoints/
 external/GraspGen/**/*.egg-info/
 external/GraspGen/**/__pycache__/
 
+# LIBERO sidecar — ignore venv, in-tree datasets, and __pycache__ (installed via
+# external/LIBERO/.venv; datasets fetched via scripts/libero/download_libero.py)
+external/LIBERO/.venv/
+external/LIBERO/datasets/
+external/LIBERO/**/*.egg-info/
+external/LIBERO/**/__pycache__/
+
 # GraspGen precomputed grasps — regenerate via scripts/precompute_grasps.py
 cache/graspgen/
 
@@ -31,3 +38,8 @@ scenes/*/datasets/
 
 # Heatmap regressor training outputs — regenerate via scripts/train_demo.py
 /runs/
+
+# Local artefacts: rendered videos, debug previews, and grasp/MJCF caches.
+# Regenerate via the relevant scripts/notebooks.
+/out/
+/cache/

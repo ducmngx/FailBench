@@ -80,14 +80,28 @@ class OffscreenRenderer:
         # Additional cameras (e.g., "ee_cam") rendered alongside primary
         self.extra_cameras = extra_cameras or []
 
+        # Visual / collision geom-group separation. Robosuite models put
+        # collision primitives in group 0 and textured visual geoms in group 1
+        # — by default MuJoCo renders both, putting green collision capsules
+        # over the textured arm. Detect that pattern (group 0 AND group 1 both
+        # present) and disable group 0 so RGB frames show only the visual mesh.
+        # Our hand-authored scenes use groups 2/3 (with a few group-0 floor/world
+        # geoms) and would lose those if we blindly hid group 0, so we leave the
+        # default in that case.
+        groups = set(int(g) for g in model.geom_group)
+        self._scene_option = mujoco.MjvOption()
+        if 0 in groups and 1 in groups:
+            self._scene_option.geomgroup[0] = 0   # hide collision
+            self._scene_option.geomgroup[1] = 1   # show visual
+
     def render(self, data: mujoco.MjData) -> np.ndarray:
         """Render a single RGB frame from primary camera. Returns (H, W, 3) uint8."""
-        self.renderer.update_scene(data, self.camera)
+        self.renderer.update_scene(data, self.camera, self._scene_option)
         return self.renderer.render()
 
     def render_depth(self, data: mujoco.MjData) -> np.ndarray:
         """Render a depth frame from primary camera. Returns (H, W) float32."""
-        self.renderer.update_scene(data, self.camera)
+        self.renderer.update_scene(data, self.camera, self._scene_option)
         self.renderer.enable_depth_rendering()
         depth = self.renderer.render().copy()
         self.renderer.disable_depth_rendering()
@@ -95,7 +109,7 @@ class OffscreenRenderer:
 
     def render_rgbd(self, data: mujoco.MjData):
         """Render RGB + depth from primary camera. Returns (rgb, depth)."""
-        self.renderer.update_scene(data, self.camera)
+        self.renderer.update_scene(data, self.camera, self._scene_option)
         rgb = self.renderer.render().copy()
         self.renderer.enable_depth_rendering()
         depth = self.renderer.render().copy().astype(np.float32)
@@ -115,7 +129,7 @@ class OffscreenRenderer:
 
         # Extra cameras
         for cam_name in self.extra_cameras:
-            self.renderer.update_scene(data, cam_name)
+            self.renderer.update_scene(data, cam_name, self._scene_option)
             rgb = self.renderer.render().copy()
             self.renderer.enable_depth_rendering()
             depth = self.renderer.render().copy().astype(np.float32)

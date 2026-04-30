@@ -1,3 +1,6 @@
 [submodule "external/GraspGen"]
 	path = external/GraspGen
 	url = https://github.com/NVlabs/GraspGen
+[submodule "external/LIBERO"]
+	path = external/LIBERO
+	url = https://github.com/Lifelong-Robot-Learning/LIBERO.git
