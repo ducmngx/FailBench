@@ -1,7 +1,8 @@
-"""Render front_cam vs topdown_cam for each scene at the robot home pose.
+"""Render front_cam vs topdown_cam (RGB + depth) for each scene at the robot home pose.
 
-Writes a 5×2 mosaic to runs/preview_topdown.png so we can eyeball the new
-topdown camera positions before committing to data re-collection.
+Writes a 5×4 mosaic to runs/preview_topdown.png:
+   col 0: front_cam RGB   col 1: front_cam depth
+   col 2: topdown_cam RGB col 3: topdown_cam depth
 
 Usage:
     python scripts/preview_topdown.py
@@ -33,12 +34,17 @@ HOME_QPOS = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04
                      dtype=np.float64)
 
 
-def render(model: mujoco.MjModel, data: mujoco.MjData,
-           camera_name: str, height: int = 480, width: int = 640) -> np.ndarray:
+def render_rgbd(model: mujoco.MjModel, data: mujoco.MjData,
+                camera_name: str, height: int = 480, width: int = 640):
+    """Returns (rgb (H,W,3) uint8, depth (H,W) float32)."""
     r = mujoco.Renderer(model, height, width)
     try:
         r.update_scene(data, camera_name)
-        return r.render()
+        rgb = r.render().copy()
+        r.enable_depth_rendering()
+        depth = r.render().copy().astype(np.float32)
+        r.disable_depth_rendering()
+        return rgb, depth
     finally:
         r.close()
 
@@ -49,6 +55,10 @@ def parse_args():
     ap.add_argument("--output", type=Path, default=Path("runs/preview_topdown.png"))
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--width", type=int, default=640)
+    ap.add_argument("--depth_min", type=float, default=0.05,
+                    help="Min depth (m) for colormap clipping")
+    ap.add_argument("--depth_max", type=float, default=2.5,
+                    help="Max depth (m) for colormap clipping")
     return ap.parse_args()
 
 
@@ -75,18 +85,26 @@ def main():
             print(f"  !! missing cameras in {scene}: {cam_names}")
             continue
 
-        front = render(model, data, "front_cam", args.height, args.width)
-        top = render(model, data, "topdown_cam", args.height, args.width)
-        rows.append((scene, front, top))
+        front_rgb, front_d = render_rgbd(model, data, "front_cam",
+                                          args.height, args.width)
+        top_rgb, top_d = render_rgbd(model, data, "topdown_cam",
+                                      args.height, args.width)
+        rows.append((scene, front_rgb, front_d, top_rgb, top_d))
 
-    fig, axes = plt.subplots(len(rows), 2, figsize=(10, 3.4 * len(rows)))
+    fig, axes = plt.subplots(len(rows), 4, figsize=(18, 3.2 * len(rows)))
     if len(rows) == 1:
         axes = axes.reshape(1, -1)
-    for r, (scene, front, top) in enumerate(rows):
-        axes[r, 0].imshow(front); axes[r, 0].axis("off")
-        axes[r, 0].set_title(f"{scene}  —  front_cam", fontsize=10)
-        axes[r, 1].imshow(top);   axes[r, 1].axis("off")
-        axes[r, 1].set_title(f"{scene}  —  topdown_cam", fontsize=10)
+    for r, (scene, fr, fd, tr, td) in enumerate(rows):
+        axes[r, 0].imshow(fr); axes[r, 0].set_title(f"{scene} — front RGB", fontsize=9)
+        axes[r, 1].imshow(np.clip(fd, args.depth_min, args.depth_max),
+                          cmap="turbo", vmin=args.depth_min, vmax=args.depth_max)
+        axes[r, 1].set_title(f"{scene} — front depth (m)", fontsize=9)
+        axes[r, 2].imshow(tr); axes[r, 2].set_title(f"{scene} — topdown RGB", fontsize=9)
+        axes[r, 3].imshow(np.clip(td, args.depth_min, args.depth_max),
+                          cmap="turbo", vmin=args.depth_min, vmax=args.depth_max)
+        axes[r, 3].set_title(f"{scene} — topdown depth (m)", fontsize=9)
+        for a in axes[r]:
+            a.axis("off")
     plt.tight_layout()
     plt.savefig(args.output, dpi=110)
     plt.close()
