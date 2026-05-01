@@ -64,6 +64,10 @@ class DataSample:
     # Optional fields
     post_failure_rgb: Optional[np.ndarray] = None
     extra_camera_views: Optional[dict] = None
+    # LIBERO replay: arm qpos that healthy joints are PD-driven toward during
+    # post-failure settle. Equals the demo's commanded pose at the fail step.
+    # None for main-pipeline trials.
+    pre_target_qpos: Optional[np.ndarray] = None
 
 
 # ---------------------------------------------------------------------------

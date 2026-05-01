@@ -294,6 +294,7 @@ class LiberoRunner:
             aggregate_contacts=all_contacts,
             all_impacted_geom_ids=sorted(all_geom_ids),
             post_failure_rgb=post_rgb,
+            pre_target_qpos=last_qpos_cmd,
         )
 
     def _inject_failure(self, fc: FailureConfig) -> None:

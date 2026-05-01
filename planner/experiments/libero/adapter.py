@@ -127,10 +127,16 @@ def materialise_mjcf(model_xml: str, cache_dir: str = _DEFAULT_MJCF_CACHE) -> st
     """
     os.makedirs(cache_dir, exist_ok=True)
     out = _cache_path(model_xml, cache_dir)
-    if not os.path.exists(out):
+    # Atomic write: a concurrent reader must never see a partial file. Write
+    # to a unique temp path, then os.replace into place. If another worker
+    # wins the race, both copies have identical content (sha-keyed), so
+    # whichever lands "last" is fine.
+    if not (os.path.exists(out) and os.path.getsize(out) > 0):
         rewritten = _rewrite_xml(model_xml)
-        with open(out, "w") as f:
+        tmp = f"{out}.tmp.{os.getpid()}.{id(model_xml)}"
+        with open(tmp, "w") as f:
             f.write(rewritten)
+        os.replace(tmp, out)
     return out
 
 

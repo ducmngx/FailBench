@@ -80,6 +80,9 @@ def save_sample_npz(sample: DataSample, path: str) -> None:
     if sample.pre_failure_depth is not None:
         arrays["pre_depth"] = sample.pre_failure_depth
 
+    if sample.pre_target_qpos is not None:
+        arrays["pre_target_qpos"] = np.asarray(sample.pre_target_qpos, dtype=np.float64)
+
     # Extra camera views (e.g., ee_cam)
     if sample.extra_camera_views:
         for cam_name, (rgb, depth) in sample.extra_camera_views.items():
