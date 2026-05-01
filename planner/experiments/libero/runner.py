@@ -125,8 +125,16 @@ class LiberoRunner:
                     else self._rng.choice(cfg.canonical_fail_fractions))
             fail_idx = max(1, min(int(frac * (T - 1)), T - 1))
 
-        for t in range(fail_idx + 1):
-            self._kinematic_step(t)
+        # Seed pre-failure state. With per-step `full_states` from the demo we
+        # can drop the sim straight into the moment of failure with the bowl
+        # actually in the gripper, all object positions correct, and qvels
+        # matching what robosuite's controller produced. Kinematic replay is a
+        # fallback for demos that don't carry full states (older HDF5s).
+        if self.demo.full_states is not None:
+            self._set_full_state(self.demo.full_states[fail_idx])
+        else:
+            for t in range(fail_idx + 1):
+                self._kinematic_step(t)
 
         logger.info("LIBERO demo %s/%s: failure at step %d/%d (frac=%.3f)",
                     self.demo.hdf5_path, self.demo.demo_key, fail_idx, T, frac)
@@ -143,14 +151,25 @@ class LiberoRunner:
         self.renderer.close()
 
     def _set_full_state(self, flat_state: np.ndarray) -> None:
+        # robosuite stores [time | qpos | qvel] (length 1 + nq + nv) in
+        # init_state and per-step states. Reading flat_state[:nq] directly
+        # treats the time field as qpos[0], shifting every object's xyz
+        # by one slot — bowls/plates render at floor level instead of the
+        # tabletop. Strip the time field first.
         nq = self.model.nq
         nv = self.model.nv
-        if flat_state.shape[0] < nq + nv:
-            logger.warning("init_state length %d < nq+nv (%d+%d)",
-                           flat_state.shape[0], nq, nv)
+        expected = 1 + nq + nv
+        if flat_state.shape[0] == expected:
+            offset = 1
+        elif flat_state.shape[0] == nq + nv:
+            offset = 0
+        else:
+            logger.warning("init_state length %d does not match nq+nv (%d) "
+                           "or 1+nq+nv (%d) — skipping",
+                           flat_state.shape[0], nq + nv, expected)
             return
-        self.data.qpos[:nq] = flat_state[:nq]
-        self.data.qvel[:nv] = flat_state[nq:nq + nv]
+        self.data.qpos[:nq] = flat_state[offset:offset + nq]
+        self.data.qvel[:nv] = flat_state[offset + nq:offset + nq + nv]
         mujoco.mj_forward(self.model, self.data)
 
     def _kinematic_step(self, t: int) -> None:
@@ -326,11 +345,12 @@ class LiberoRunner:
             return
         for aid in self.handles.finger_actuator_ids:
             lo, hi = self.model.actuator_ctrlrange[aid]
-            # Each finger: ctrl=hi closes, ctrl=lo opens (or vice versa). For
-            # robosuite Panda finger1 ctrl ∈ [0, 0.04] → 0 = open, 0.04 = closed,
-            # finger2 ctrl ∈ [-0.04, 0] → 0 = open, -0.04 = closed. The "open"
-            # end is the one closer to zero, so map t=1 → 0, t=0 → far end.
-            if abs(lo) < abs(hi):
+            # robosuite Panda position-actuated fingers: each finger's qpos is
+            # 0 when fully closed and at the |max| of its range when fully
+            # open. finger1 ctrl ∈ [0, 0.04] → 0 = closed, 0.04 = open.
+            # finger2 ctrl ∈ [-0.04, 0] → 0 = closed, -0.04 = open. So the
+            # "open" end is the one *farther* from zero in absolute value.
+            if abs(lo) > abs(hi):
                 open_end, close_end = lo, hi
             else:
                 open_end, close_end = hi, lo
