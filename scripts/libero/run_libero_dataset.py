@@ -14,12 +14,20 @@ Example::
 
 from __future__ import annotations
 
+import os
+
+# Force headless GL backend BEFORE importing mujoco anywhere. Without this,
+# mujoco.Renderer falls back to GLFW which deadlocks in glfw.init() on
+# headless machines (no X display). Must be set in workers too — set here
+# at module scope so spawn'd workers re-execute the import and inherit it.
+os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+
 import argparse
 import concurrent.futures
 import glob
 import logging
 import multiprocessing
-import os
 import sys
 import time
 from typing import List, Optional
