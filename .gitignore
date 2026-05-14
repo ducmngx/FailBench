@@ -43,3 +43,7 @@ scenes/*/datasets/
 # Regenerate via the relevant scripts/notebooks.
 /out/
 /cache/
+
+# Training-run stdout logs (the run dirs in /runs/ already contain metrics.csv
+# and best.pt; these are just tee'd stdout copies).
+/logs/
