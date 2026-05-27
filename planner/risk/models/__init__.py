@@ -14,11 +14,13 @@ from planner.risk.benchmark_dataset import ModalityConfig
 from planner.risk.models.mlp import BenchmarkMLP
 from planner.risk.models.convdec import BenchmarkConvDec
 from planner.risk.models.unet import BenchmarkUNet
+from planner.risk.models.transformer import BenchmarkTransformer
 
 _REGISTRY = {
     "mlp": BenchmarkMLP,
     "convdec": BenchmarkConvDec,
     "unet": BenchmarkUNet,
+    "transformer": BenchmarkTransformer,
 }
 
 
