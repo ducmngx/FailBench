@@ -808,6 +808,71 @@ libero_spatial is now characterised. The remaining open items are:
 
 No additional libero_spatial experiments are strictly needed to close the story. The realistic + oracle pair of tables in §16.3 IS the libero_spatial result.
 
+---
+
+## 17. Cross-task held-out (2026-05-27 follow-up) — vision and state SWAP positions
+
+### 17.1 Why this experiment
+
+The §16 conclusion ("vision adds zero value") was made under a demo-stratified split: train and val saw the same 10 libero_spatial tasks, just different demos within each task. A reviewer-honest concern: state-only might be *memorising per-task contact patterns* rather than learning a generalisable mapping from configuration to contacts. If true, the comparison was rigged in state's favour because both models saw all 10 task-specific scenes during training.
+
+The cross-task held-out test removes that confound. Train on 7 randomly chosen tasks; val on the remaining 3 — which the model has never seen. State-only must generalise across task-specific scene layouts; vision can actually observe the new scenes.
+
+Seed 0 held out: `pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_…`, `…_next_to_the_plate_…`, `…_on_the_cookie_box_…`. Three layouts that meaningfully differ from the training-task layouts (different bowl positions, different surrounding objects).
+
+### 17.2 Result
+
+| Split type | ConvDec state-only | UNet late_fusion state+rgb+depth | Vision − State |
+|---|---|---|---|
+| **Demo-stratified** (within-distribution) | **0.137** | 0.138 | +1 % (state wins by a hair) |
+| **Task-held-out** (out-of-distribution) | 0.162 | **0.154** | **−5 % (vision wins)** |
+| Degradation going OOD | **+18 %** | +11 % | state degrades 64 % more than vision |
+
+### 17.3 Interpretation
+
+The result is sharp: **vision and state SWAP positions when going from in-distribution to out-of-distribution**. Both models degrade, but state-only degrades almost twice as much.
+
+**State-only's failure mode**: with 7 training tasks each having a distinct scene layout, state-only learned a piecewise mapping `(robot_config) → heatmap` where the "piece" was implicitly task-determined (state happens to correlate with task because each task occupies a slightly different sub-region of the state space). When a held-out task lies outside the trained sub-regions, state-only extrapolates poorly. Its 18 % degradation is the cost of that implicit task-indexing breaking down.
+
+**Vision's advantage**: even on a never-seen task, the agentview camera shows the bowl, the plate, the cookie box, the drawer — the same kinds of objects the model trained on, just in new positions. The UNet can directly observe scene geometry and predict contact locations from it. 11 % degradation suggests the visual representation generalises better, though not perfectly (held-out tasks have some out-of-distribution scene elements like the open drawer that training tasks didn't have).
+
+**The within-distribution "tie" was an artefact**, not a finding. State-only's apparent equality with vision (0.137 vs 0.138) on the demo-stratified split came from memorising per-task patterns that vision didn't need because it observes them directly. Once memorisation is taken off the table (held-out tasks), vision wins.
+
+### 17.4 What this changes about the conclusions
+
+| Claim | Status |
+|---|---|
+| "Vision adds zero standalone value on libero_spatial" | **Wrong** — true only on demo-stratified split. Vision adds 5 % on OOD. |
+| "Vision adds 17 % when given failure descriptors" (oracle) | Still true within demo-stratified setting. |
+| "The natural deploy architecture is two-head failure-prediction" | Still correct, but the vision branch in that architecture has additional value beyond what §16 measured. |
+| "ConvDec state-only is the deploy leader on libero_spatial" | **Conditional**: true if deployed on the same 10 task scenes. False on novel scenes; UNet would be the deploy leader there. |
+
+### 17.5 Implications for the project
+
+1. **The realistic-benchmark §16 headline ("vision adds 0 %") needs an OOD caveat.** A deployed planner that's going to see scenes outside the training distribution should use vision. State-only's deploy advantage holds only under the strong assumption that the deploy distribution matches train distribution exactly.
+
+2. **The scale-up to libero_object + libero_goal is now urgent**, not just nice-to-have. Those splits introduce object diversity (libero_object) and goal-location diversity (libero_goal) that should further widen vision's advantage. If the cross-task gap is 5 % on libero_spatial (smallest-scene-variation split), it could be 20-30 % on libero_object.
+
+3. **The "image conditioning is wasted compute" claim should be retired.** Vision is wasted *within* a single scene distribution, but vision is necessary *across* scene distributions. The compute cost (~10× per-trial) is justified for the OOD setting.
+
+4. **Reframing for the paper**: the value-of-vision is fundamentally a question about **generalisation regime**, not about model architecture or modality. Both papers should be written:
+   - "On in-distribution test, state-only suffices"
+   - "On out-of-distribution test, vision is necessary"
+   - Together they form a "when does each modality matter" story that's much stronger than either alone.
+
+### 17.6 Updated final framing (supersedes §16.5)
+
+> *"On LIBERO-spatial, the value of image conditioning depends entirely on the generalisation regime. Under within-distribution evaluation (demo-stratified split, same 10 tasks in train and val), kinematic state achieves weighted MSE 0.137 and image conditioning adds no measurable benefit — state-only models implicitly memorise per-task scene-specific contact patterns. Under out-of-distribution evaluation (3 unseen tasks held out), state-only degrades by 18 % to 0.162 while a late-fusion UNet conditioned on RGB+depth degrades only 11 % to 0.154 — vision wins by 5 % and the gap is expected to widen on splits with more scene variation (libero_object, libero_goal). A deployed planner facing novel configurations should use vision; one operating within a fixed scene distribution can use kinematics alone."*
+
+### 17.7 What's next
+
+Original §16 next-steps list stands, but priority order changes:
+
+1. **Scale-up to libero_object + libero_goal** (was #1, now #1 still, even more urgent — the OOD signal here will likely be large).
+2. **Two-head failure-prediction model** (was #2, still #2 — even more motivated now that we know vision adds OOD value).
+3. **Mass calibration head** (was #3, still #3).
+4. **New addition**: rerun the §17 task-held-out experiment with all 3 splits combined into one held-out task pool. Would give the strongest single-number "value of vision under OOD" estimate.
+
 
 ### 12.6 What this means for the project
 

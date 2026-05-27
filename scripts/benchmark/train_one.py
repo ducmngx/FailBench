@@ -37,7 +37,7 @@ import hdf5plugin  # noqa: F401, must register filter before h5py opens files
 
 from planner.risk.benchmark_dataset import (  # noqa: E402
     BenchmarkDataset, MarginalBenchmarkDataset, ModalityConfig, TargetConfig,
-    demo_stratified_split,
+    demo_stratified_split, task_held_out_split,
 )
 from planner.risk.models import make_model  # noqa: E402
 
@@ -98,6 +98,12 @@ def parse_args():
                          "(demo, bin) group (realistic deploy setting)")
     ap.add_argument("--marginal_root", type=Path, default=Path("cache/marginal_targets_v2"),
                     help="root dir for precomputed marginal targets (used when --target_form=marginal)")
+    ap.add_argument("--split_by", default="demo", choices=["demo", "task"],
+                    help="demo: per-demo-stratified 90/10 split; "
+                         "task: hold out --n_val_tasks whole tasks for val "
+                         "(tests cross-task generalisation)")
+    ap.add_argument("--n_val_tasks", type=int, default=3,
+                    help="when --split_by=task, number of held-out tasks (default 3)")
     ap.add_argument("--max_trials", type=int, default=None,
                     help="subsample dataset to this many trials (smoke tests)")
     ap.add_argument("--output_dir", type=Path, default=None)
@@ -174,8 +180,9 @@ def main():
         ts = time.strftime("%Y%m%d-%H%M%S")
         mod_tag = "+".join(k for k in ALL_MODALITIES if getattr(mod_cfg, k))
         tf_tag = "marg" if args.target_form == "marginal" else "pertrial"
+        split_tag = f"splitT{args.n_val_tasks}" if args.split_by == "task" else "splitD"
         args.output_dir = (REPO_ROOT / "runs" / "bench" /
-                           f"{args.model}__{mod_tag}__T{args.T}__{tf_tag}__seed{args.seed}__{ts}")
+                           f"{args.model}__{mod_tag}__T{args.T}__{tf_tag}__{split_tag}__seed{args.seed}__{ts}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     print(f"writing -> {args.output_dir}")
 
@@ -202,7 +209,15 @@ def main():
             dino_cache_root=args.dino_cache_root if mod_cfg.dino else None,
             use_window=(args.T == 8),
         )
-    train_idx, val_idx = demo_stratified_split(ds, val_frac=args.val_frac, seed=args.seed)
+    val_task_names = None
+    if args.split_by == "task":
+        train_idx, val_idx, val_task_names = task_held_out_split(
+            ds, n_val_tasks=args.n_val_tasks, seed=args.seed)
+        print(f"split_by=task: holding out {args.n_val_tasks} tasks:")
+        for t in val_task_names:
+            print(f"  - {t}")
+    else:
+        train_idx, val_idx = demo_stratified_split(ds, val_frac=args.val_frac, seed=args.seed)
     if args.max_trials is not None:
         rng = np.random.default_rng(args.seed)
         train_idx = rng.choice(train_idx, size=min(args.max_trials, len(train_idx)),

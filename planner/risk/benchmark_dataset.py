@@ -388,3 +388,40 @@ def demo_stratified_split(ds, *,
         (val_idx if g in val_groups else train_idx).extend(ids)
     return np.asarray(sorted(train_idx), dtype=np.int64), \
            np.asarray(sorted(val_idx), dtype=np.int64)
+
+
+def task_held_out_split(ds, *, n_val_tasks: int = 3, seed: int = 0):
+    """Hold out ``n_val_tasks`` whole tasks for val; the rest train.
+
+    Tests cross-task generalisation: model trained on N-k tasks must predict
+    contacts on k unseen tasks. State-only models that have implicitly
+    memorised the training tasks' scene layouts should generalise worse than
+    vision-conditioned models that observe the new scene directly.
+
+    Returns ``(train_idx, val_idx, val_task_names)``.
+    """
+    indices = []
+    if isinstance(ds, MarginalBenchmarkDataset):
+        for i, entry in enumerate(ds._index):
+            _, _, _, _, split, task, demo_key = entry
+            indices.append((i, (split, task)))
+    else:
+        for i, row in enumerate(ds._base._index):
+            indices.append((i, (row.split, row.task)))
+
+    groups = {}
+    for i, g in indices:
+        groups.setdefault(g, []).append(i)
+
+    rng = np.random.default_rng(seed)
+    task_keys = sorted(groups.keys())
+    rng.shuffle(task_keys)
+    val_tasks = set(task_keys[:n_val_tasks])
+
+    train_idx, val_idx = [], []
+    for g, ids in groups.items():
+        (val_idx if g in val_tasks else train_idx).extend(ids)
+    val_task_names = sorted(t for _, t in val_tasks)
+    return (np.asarray(sorted(train_idx), dtype=np.int64),
+            np.asarray(sorted(val_idx), dtype=np.int64),
+            val_task_names)
