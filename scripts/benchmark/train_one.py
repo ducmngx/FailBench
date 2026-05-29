@@ -45,14 +45,22 @@ ALL_MODALITIES = ("state", "goal", "rgb", "depth", "dino", "failure_mode", "fail
 
 
 def parse_modalities(s: str) -> ModalityConfig:
-    """Comma-separated → ModalityConfig. Empty → state-only."""
+    """Comma-separated → ModalityConfig.
+
+    The returned config has *only* the listed modalities enabled; every flag
+    defaults to False so callers get exactly what they asked for (state must
+    be listed explicitly to be on).
+    """
     if not s:
-        return ModalityConfig()
+        return ModalityConfig(state=False)
     keys = [k.strip() for k in s.split(",") if k.strip()]
     unknown = [k for k in keys if k not in ALL_MODALITIES]
     if unknown:
         raise ValueError(f"unknown modalities {unknown}; options: {ALL_MODALITIES}")
-    return ModalityConfig(**{k: True for k in keys})
+    kwargs = {m: False for m in ALL_MODALITIES}
+    for k in keys:
+        kwargs[k] = True
+    return ModalityConfig(**kwargs)
 
 
 def parse_args():

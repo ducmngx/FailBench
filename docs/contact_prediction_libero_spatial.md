@@ -895,3 +895,113 @@ Original §16 next-steps list stands, but priority order changes:
 
 > *"On LIBERO-spatial, contact-at-failure prediction from kinematic state alone achieves weighted MSE 0.137. The dominant source of error is the model not knowing which of 5 failure modes was sampled. Exposing the failure mode as input drops MSE to 0.104 (−24 %), and additionally exposing which specific joints failed drops it to 0.067 (−51 %). Gripper-class failures become essentially solved (MSE ≤ 0.006), while joint-failure modes remain harder (MSE 0.10-0.11) due to irreducible physical uncertainty when the arm falls under gravity. Frozen DINOv2 vision features and an ImageNet ResNet UNet over RGB+depth add no measurable benefit at this scale; the contact pattern is determined by `(pre_failure_pose, failure_descriptor)` and image inputs provide nothing kinematic state doesn't already contain."*
 
+
+
+## 18. Sequence-native Transformer (2026-05-27) — attention does not beat mean-pool
+
+### 18.1 Why this experiment
+
+§16/§17 established that an 8-frame window adds nothing under mean-pooling
+(UNet `late_fusion`). The open question was whether mean-pooling *itself*
+was the bottleneck: a model that can attend non-uniformly across frames and
+fuse modalities through attention might surface motion or context that mean
+discards.
+
+`planner/risk/models/transformer.py` implements a sequence-native baseline:
+per-frame state/RGB/depth/DINO tokens plus optional goal and failure
+descriptor tokens, sinusoidal temporal + 2-D spatial PE, learned heatmap
+queries that pool the input through a 6-layer pre-LN encoder (d=256, 4
+heads, ~5 M params). See `docs/benchmark_models.md` §5 for the full diagram.
+
+### 18.2 Results
+
+Three Transformer runs on libero_spatial, per-trial target, demo-stratified
+split, seed 0, 30 epochs:
+
+| Run | Modalities | best val | best ep | comparison |
+|---|---|---|---|---|
+| #22 | state+rgb+depth | 0.1384 | 27 | UNet late_fusion (#6): 0.1372 → attention 0.9 % *worse* |
+| #24 | rgb+depth (vision only, true) | 0.1418 | 30 | Transformer +2.4 % worse without state |
+| #23 | rgb+depth (contaminated, see §18.4) | 0.1389 | 27 | invalid — actually state+rgb+depth |
+
+Headline: a 6-layer Transformer with explicit temporal positional encoding
+and learned query tokens cannot beat a small UNet with mean-pooled per-frame
+features. The "video signal" the architecture was designed to capture isn't
+there, or the model lacks the inductive bias to find it under this loss/data
+budget.
+
+### 18.3 What this rules out
+
+This is the cleanest test of "does watching motion help at this scale" that
+we've run:
+
+1. **Architecture is not the bottleneck.** Replacing mean-pool with full
+   self-attention across frames + modalities does not improve val MSE.
+2. **Positional encoding is not the bottleneck.** Sinusoidal PE in time
+   (T=8) and in space (15×20 patch grid) is the canonical design — if it
+   were the missing ingredient, this run would have shown it.
+3. **The 8-frame window genuinely contains no useful incremental signal**
+   beyond the last frame, on this dataset, with this target form, at this
+   scale.
+
+The remaining suspects for "where could vision help beyond what's captured
+now":
+
+- **Cross-scene generalisation** (§17): vision helps OOD by 5 %, but no
+  amount of in-distribution architecture change recovers the within-task
+  gap.
+- **Longer windows** (T=16+): unlikely to help — the 8-frame gap is
+  already 0 %, so the marginal value of older frames is bounded above.
+- **Different conditioning signal** entirely (failure descriptors as in
+  §12-15) — already shown to drop MSE to 0.067 cheaply.
+
+### 18.4 Bug: `parse_modalities` contamination
+
+While reviewing the vision-only result, found a bug in
+`scripts/benchmark/train_one.py::parse_modalities`. The dataclass
+`ModalityConfig` defaults `state=True`, and the parser was building configs
+by passing only the listed flags as ``True`` and inheriting defaults for
+everything else. ``--modalities rgb,depth`` therefore produced
+``state=True, rgb=True, depth=True`` — not vision-only.
+
+Affected runs:
+- **#20** UNet T=1 "rgb+depth": actually state+rgb+depth
+- **#21** UNet T=8 "rgb+depth": actually state+rgb+depth
+- **#23** Transformer T=8 "rgb+depth": actually state+rgb+depth
+
+These were re-runs of state+vision configs under a different name. The
+"vision-only ties state-only within 0.5 %" claim in the prior log was the
+result of the same model running twice. The actual vision-only Transformer
+(#24, after the fix) is 2.4 % *worse* than state+vision Transformer, and
+3.4 % worse than the best state-only ConvDec (#9: 0.1366).
+
+Fix: parse_modalities now starts from an all-False config and sets only the
+listed flags. Run start now prints
+``modalities=ModalityConfig(state=False, ..., rgb=True, depth=True, ...)``
+so contamination is visible immediately.
+
+§16.5 and §17.6 framings are unaffected: state-only and state+vision were
+correctly evaluated. Only the "vision-only" subclaim from §16/§17 was
+contaminated, and #24 replaces it: vision *alone* underperforms state alone
+within distribution.
+
+### 18.5 Updated publishable framing addition
+
+> *"A sequence-native Transformer (5 M params, 6 layers, sinusoidal temporal
+> and spatial positional encoding, learned heatmap queries over a T=8
+> window) does not improve over a small UNet with per-frame mean-pooled
+> features (0.1384 vs 0.1372 weighted MSE). This rules out mean-pooling as
+> the bottleneck and confirms that within-distribution contact prediction
+> on libero_spatial is bottlenecked by the failure-descriptor uncertainty
+> identified in §12-15, not by the temporal modelling of the input
+> window."*
+
+### 18.6 What's next
+
+Unchanged from §17.7 priority list. The architecture-side question is now
+closed: attention does not unlock anything mean-pool was missing. Future
+gains have to come from:
+
+1. Scale-up to libero_object/libero_goal (OOD widens vision's value)
+2. Two-head failure-prediction model (eliminate the §12-15 oracle)
+3. Mass calibration head (architectural fix for §15's 28× over-prediction)

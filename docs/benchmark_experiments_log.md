@@ -44,9 +44,11 @@ Sorted by chronology; "best val" is `weighted_mse_log1p` on the val split.
 | 17 | 05-27 | UNet | state+rgb+depth | 8 | **marginal** | demo | late_fusion | 0.3605 | 6 | `unet__...__marg__20260527-...` |
 | 18 | 05-27 | ConvDec | state | 1 | per_trial | **task-held-out** | — | 0.1620 | 14 | `convdec__state__T1__pertrial__splitT3__20260527-...` |
 | 19 | 05-27 | UNet | state+rgb+depth | 8 | per_trial | **task-held-out** | late_fusion | **0.1538** | 4 | `unet__...__splitT3__20260527-...` |
-| 20 | 05-27 | UNet | **rgb+depth (no state)** | 1 | per_trial | demo | last | 0.1371 | 4 | `unet__rgb+depth__T1__20260527-...` |
-| 21 | 05-27 | UNet | **rgb+depth (no state)** | 8 | per_trial | demo | late_fusion | running | – | – |
-| 22 | tbd | Transformer | tbd | tbd | tbd | tbd | n/a | tbd | tbd | – |
+| 20 | 05-27 | UNet | rgb+depth (no state) [contaminated] | 1 | per_trial | demo | last | 0.1371 | 4 | bug: parse_modalities defaulted state=True; see note below |
+| 21 | 05-27 | UNet | rgb+depth (no state) [contaminated] | 8 | per_trial | demo | late_fusion | 0.1380 | 7 | bug: parse_modalities defaulted state=True |
+| 22 | 05-27 | Transformer | state+rgb+depth | 8 | per_trial | demo | n/a | 0.1384 | 27 | `transformer__state+rgb+depth__T8__pertrial__splitD__seed0__20260527-194220` |
+| 23 | 05-27 | Transformer | rgb+depth (no state) [contaminated] | 8 | per_trial | demo | n/a | 0.1389 | 27 | bug: same as 20/21 — actually state+rgb+depth |
+| 24 | 05-27 | Transformer | **rgb+depth (no state)** | 8 | per_trial | demo | n/a | 0.1418 | 30 | `transformer__rgb+depth__T8__pertrial__splitD__seed0__20260527-221619` |
 
 Bolded rows mark notable findings (leader within their setting).
 
@@ -62,8 +64,22 @@ Bolded rows mark notable findings (leader within their setting).
 | **Vision + oracle** | 14, 15 | Vision +17% on top of full oracle info |
 | **Realistic target** | 16, 17 | State-only ties vision (within 0.7%) on marginal target |
 | **Cross-task held-out** | 18, 19 | Vision wins by 5% OOD — the within-distribution tie was an artefact |
-| **Vision-only** | 20, 21 | Tests if pixels carry motion info that qvel doesn't |
-| **Sequence model** | 22 | Transformer test of "does video help" — pending |
+| **Vision-only (contaminated)** | 20, 21, 23 | parse_modalities had a bug — these runs included state. Re-run as #24 |
+| **Sequence model** | 22, 24 | (22) Transformer state+rgb+depth T=8 = 0.1384 vs UNet late_fusion 0.1372 — attention slightly worse than mean. (24) Transformer rgb+depth T=8 (true vision-only) = 0.1418 — adding state helps Transformer by ~2.4 % (0.1418 → 0.1384). Vision alone is the weakest of the three. |
+
+## Note on contaminated "vision-only" runs (2026-05-27)
+
+`scripts/benchmark/train_one.py::parse_modalities` originally built the
+`ModalityConfig` by passing only the listed flags as ``True`` and inheriting
+defaults for the rest. ``ModalityConfig.state`` defaulted to ``True``, so
+``--modalities rgb,depth`` produced ``state=True, rgb=True, depth=True``.
+Runs #20, #21, #23 are therefore not vision-only — they ran with state too.
+
+Fix: parse_modalities now starts from an all-False config and sets only the
+listed flags. Verified by ``modalities=ModalityConfig(state=False, ...)``
+print at run start.
+
+Run #24 is the corrected re-run of the vision-only Transformer.
 
 ## Reproducible run-name decoder
 
