@@ -17,15 +17,27 @@ and you need multi-seed, multi-split paper-quality numbers.
   - `$SCRATCH` (= `/scratch/$USER`) — unlimited, **90-day purge**. Data lives here.
   - `/projects/<advisor>/` — persistent shared group space, ask advisor for access.
 
+## Partitions (confirmed via `sinfo` 2026-06-01)
+
+| Partition | Time limit | GPUs | Notes |
+|---|---|---|---|
+| **`gpuq`** | 5 days | A100 80GB + A100 40GB (dgx001-002) | Default for regular users. SBATCH script targets this |
+| `contrib-gpuq` | 5 days | More A100s, gated by contributor access | Ask advisor if your group has nodes here |
+| `contrib-H100` | 5 days | H100 80GB (gpu032) | Contributor-gated. Use for the biggest sweeps |
+| `contrib-B200` | 5 days | B200 (dgx003) | Newest. Likely contributor-gated |
+
+To **force A100 80GB only** (instead of getting an A100 40GB DGX node),
+check the feature name via `sinfo -o "%P %f" -p gpuq` and add a
+`#SBATCH --constraint=...` line. For our sweep, 40GB is fine — even the
+biggest model (UNet+failure_oracle) trains in <12 GB at batch 64.
+
 ## TODO before first submission
 
-1. Partition / queue name for A100 80GB nodes. Run `sinfo` after login and
-   look for a partition like `gpu-a100` or `normal`. Edit `SBATCH_PARTITION`
-   in `sweep_headline.sbatch`.
-2. Max wall-time policy for that partition. Most jobs here are <2 h; if the
-   partition caps shorter than that, split the sweep further.
-3. Conda module name. Check `module avail anaconda` after login. Usually
-   `anaconda3` or `miniconda3`.
+1. Confirm the conda module name. Run `module avail anaconda` after login
+   (or `module avail miniconda`). Edit the `module load` line in
+   `sweep_headline.sbatch` if it isn't `anaconda3`.
+2. If your group has an allocation code, uncomment `#SBATCH --account=...`
+   in the SBATCH script.
 
 ## One-time setup
 
