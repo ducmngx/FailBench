@@ -34,16 +34,28 @@ class V2Index:
     is_holding: bool
 
 
-def _load_manifest(path: Path) -> list:
+def _load_manifest(path: Path, v2_root: Optional[Path] = None) -> list:
+    """Load a v2 manifest, optionally rewriting h5_path under a new root.
+
+    When ``v2_root`` is provided, the stored ``h5_path`` (an absolute path
+    from the machine that built the manifest) is replaced with
+    ``v2_root / split / (task + ".h5")``. This is how the dataset works on
+    a cluster after rsync — the manifest came from somewhere else but the
+    files live under a new prefix.
+    """
     rows: list = []
     with open(path) as f:
         reader = csv.DictReader(f)
         for r in reader:
+            if v2_root is not None:
+                h5_path = str(v2_root / r["split"] / (r["task"] + ".h5"))
+            else:
+                h5_path = r["h5_path"]
             rows.append(V2Index(
                 trial_id=r["trial_id"],
                 split=r["split"],
                 task=r["task"],
-                h5_path=r["h5_path"],
+                h5_path=h5_path,
                 fail_idx=int(r["fail_idx"]),
                 failure_mode=r["failure_mode"],
                 is_holding=(r["is_holding"].lower() == "true"),
@@ -115,7 +127,7 @@ class LiberoV2Dataset:
             mp = self.v2_root / s / "manifest.csv"
             if not mp.exists():
                 raise FileNotFoundError(f"Missing v2 manifest: {mp}")
-            self._index.extend(_load_manifest(mp))
+            self._index.extend(_load_manifest(mp, v2_root=self.v2_root))
 
     def __len__(self) -> int:
         return len(self._index)
