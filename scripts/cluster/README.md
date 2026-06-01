@@ -80,15 +80,19 @@ print('all imports OK')
 
 ## Smoke-test the trainer on a GPU node
 
-Never run training on the head node — grab a GPU via `salloc` first:
+Never run training on the head node — grab a GPU via `salloc` first.
+Hopper requires `-q gpu` (QOS) and an explicit GPU type in the gres:
 
 ```bash
-salloc --partition=gpuq --gres=gpu:1 --time=00:15:00
+salloc -p gpuq -q gpu --gres=gpu:A100.80gb:1 --cpus-per-task=8 --mem=32G --time=00:15:00
 # (you get dropped onto a GPU node)
+
 module load gnu10 && module load python/3.9.9-jh
 source $HOME/failbench_env/bin/activate
-cd $HOME/FailBench
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+# expect: NVIDIA A100-SXM4-80GB, 81920 MiB (or similar)
 
+cd $HOME/FailBench
 PYTHONPATH=. python -m scripts.benchmark.train_one \
   --model convdec --modalities state --T 1 --epochs 1 --max_trials 100 \
   --v2_root /scratch/$USER/data/failbench_data/libero/v2 \
@@ -96,6 +100,9 @@ PYTHONPATH=. python -m scripts.benchmark.train_one \
 # should print one "ep 1/1 train=... val=..." line in ~30 s
 exit
 ```
+
+If `salloc` queues for a long time, try `--gres=gpu:A100.40gb:1` instead —
+DGX A100 40GB nodes are typically less contended.
 
 ## Stage the data into $SCRATCH (one-time, ~5-10 h overnight)
 

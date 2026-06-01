@@ -11,8 +11,9 @@
 
 #SBATCH --job-name=fb-headline
 #SBATCH --partition=gpuq                # Hopper main GPU partition (5-day timelimit)
+#SBATCH --qos=gpu                       # required for any GPU job on Hopper
 #SBATCH --array=0-44%8                  # 45 jobs, max 8 concurrent — adjust if cluster lets you run more
-#SBATCH --gres=gpu:1                    # 1 GPU/task. Add a constraint below if you need a specific GPU type
+#SBATCH --gres=gpu:A100.80gb:1          # 1 full A100 80GB per task. See "GPU type alternatives" below
 #SBATCH --cpus-per-task=8               # match --num_workers below
 #SBATCH --mem=64G                       # per task
 #SBATCH --time=02:00:00                 # most runs are <90 min; raise if your sweep gets bigger models
@@ -20,14 +21,14 @@
 #SBATCH --error=logs/sweep-%x-%A_%a.err
 #SBATCH --requeue                       # auto-retry on transient node failure
 
-# ---- Optional partition tweaks --------------------------------------------
-# gpuq has a mix of A100 40GB (dgx001-002) and A100 80GB nodes. If you want
-# to force 80GB:
-#    #SBATCH --constraint=a100_80gb     (or whatever the Hopper feature name is — check with `sinfo -o "%P %f" -p gpuq`)
-# If your group has contributor access to more GPUs:
+# ---- GPU type alternatives ------------------------------------------------
+# Switch the --gres line above if you want a different GPU type:
+#    --gres=gpu:A100.40gb:1     (DGX A100s — typically less queued)
+#    --gres=gpu:H100.80gb:1     (single H100 node, contrib-H100 partition)
+# MIG slices (1g.10gb, 2g.20gb, 3g.40gb) are too small for our models — skip.
+#
+# If your group has contributor access:
 #    #SBATCH --partition=contrib-gpuq
-# For the H100 node:
-#    #SBATCH --partition=contrib-H100
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
