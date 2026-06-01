@@ -35,19 +35,15 @@ set -euo pipefail
 # ---- Cluster environment --------------------------------------------------
 
 module purge
-module load anaconda3                   # adjust if module is named differently
+module load gnu10
+module load python/3.9.9-jh             # cluster default Python; works for training-only
 
-# Activate the env (sourcing conda's hook is more reliable inside SLURM than `conda activate`).
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate failbench_env
-
-# Ensure MuJoCo can find headless GL.
-export MUJOCO_GL=egl
-export PYOPENGL_PLATFORM=egl
+# Activate the venv (no conda needed — training never imports MuJoCo).
+source "$HOME/failbench_env/bin/activate"
 
 # Repo + data paths.
 export PYTHONPATH="$HOME/FailBench:$PYTHONPATH"
-export FAILBENCH_V2_ROOT="$SCRATCH/failbench/v2"
+export FAILBENCH_V2_ROOT="$SCRATCH/data/failbench_data/libero/v2"
 
 cd "$HOME/FailBench"
 mkdir -p logs runs/bench

@@ -41,24 +41,60 @@ biggest model (UNet+failure_oracle) trains in <12 GB at batch 64.
 
 ## One-time setup
 
+**Training on Hopper is pure PyTorch + h5py + numpy** — no MuJoCo at runtime
+(the dataset is already pre-rendered). So we use a pip `venv`, not conda.
+
 ```bash
 # 1. SSH in
 ssh $USER@hopper.orc.gmu.edu
 
 # 2. Clone the repo into $HOME
 cd $HOME
-git clone git@github.com:ducmngx/FailBench.git
+git clone -b refactor/cleanup https://github.com/ducmngx/FailBench.git
 cd FailBench
-git checkout refactor/cleanup   # or whatever branch carries the SLURM scaffolding
 
-# 3. Build the conda env
-module load anaconda3            # or whatever the cluster calls it
-conda env create -f environment.yml -n failbench_env
+# 3. Build the venv (uses Hopper's Python module, ~5 GB into $HOME)
+module load gnu10
+module load python/3.9.9-jh
+python -m venv $HOME/failbench_env
+source $HOME/failbench_env/bin/activate
+pip install --upgrade pip
 
-# 4. Verify the env runs a smoke trainer (uses tiny --max_trials so it
-#    finishes in under a minute and needs no data)
-PYTHONPATH=. conda run -n failbench_env python -c \
-  "import torch; import mujoco; print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); print('mujoco', mujoco.__version__)"
+# 4. PyTorch with CUDA (cu121 wheels are forward-compatible with the
+#    cluster's drivers; check `nvidia-smi` on a GPU node if unsure)
+pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu121
+
+# 5. Rest of the training deps
+pip install h5py==3.11.0 hdf5plugin numpy==2.0.1 scipy==1.15.3 \
+            pandas matplotlib pillow pyyaml \
+            transformers==4.55.4   # transformers only needed if you run DINOv2 modality
+
+# 6. Quick import check (no GPU needed; head node is fine)
+python -c "
+import torch, h5py, hdf5plugin, numpy, pandas
+print('torch', torch.__version__)
+print('h5py', h5py.__version__)
+print('all imports OK')
+"
+```
+
+## Smoke-test the trainer on a GPU node
+
+Never run training on the head node — grab a GPU via `salloc` first:
+
+```bash
+salloc --partition=gpuq --gres=gpu:1 --time=00:15:00
+# (you get dropped onto a GPU node)
+module load gnu10 && module load python/3.9.9-jh
+source $HOME/failbench_env/bin/activate
+cd $HOME/FailBench
+
+PYTHONPATH=. python -m scripts.benchmark.train_one \
+  --model convdec --modalities state --T 1 --epochs 1 --max_trials 100 \
+  --v2_root /scratch/$USER/data/failbench_data/libero/v2 \
+  --splits libero_spatial
+# should print one "ep 1/1 train=... val=..." line in ~30 s
+exit
 ```
 
 ## Stage the data into $SCRATCH (one-time, ~5-10 h overnight)
