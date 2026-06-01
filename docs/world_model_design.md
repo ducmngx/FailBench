@@ -213,7 +213,80 @@ The first is more honest; the second is a free pretraining trick.
 
 ---
 
-## 10. Concrete order of operations
+## 10. What the post-failure state actually contains
+
+A subtle but important property of the LIBERO runner: failed joints are
+*passive*, not *frozen*. `LiberoRunner._apply_resistance` does two things
+each step after the failure injection:
+
+- **Healthy joints**: get `τ = qfrc_bias + Kp·(q* − q) − Kd·qd` (gravity
+  compensation + per-joint PD toward the demo's last-commanded pose). They
+  actively resist.
+- **Failed joints**: had their actuator gains zeroed in
+  `LiberoFailureInjector._kill_joint`. No torque is applied, but the joint
+  itself is still free. Gravity pulls it, neighboring links drag it,
+  contacts push it back. `qpos`/`qvel` evolve through MuJoCo's integrator.
+
+So `post_qpos[t]` for a failed joint at frame t is *real free-fall
+dynamics* — not frozen at the failure moment. This is exactly the supervision
+signal we want: "given the failure set, this is how the arm actually drops."
+No special handling needed.
+
+**One regime change inside the post-failure window:**
+
+| phase | what determines qpos_{t+1} | image matters? |
+|---|---|---|
+| Pre-contact free-fall | gravity + multibody coupling on current qpos/qvel | no — state is sufficient |
+| Post-contact dynamics | scene geometry (table, obstacle locations) | yes — state alone can't disambiguate which obstacle was hit |
+
+The cutoff is whatever frame the arm first contacts something. For typical
+LIBERO arm poses, that's the first 0.3–0.8 s after failure (6–16 frames
+at 20 Hz). The model has a much easier time on pre-contact frames than
+post-contact ones — expect the k-step rollout error to spike sharply at
+the moment of first contact.
+
+## 11. When to add image conditioning
+
+Following directly from §10, there are three natural thresholds:
+
+1. **Pre-contact free-fall — image is wasted.** Next-state depends only on
+   current qpos/qvel + gravity vector + multibody coupling. The state
+   vector already encodes everything the model needs. Adding image just
+   forces the model to learn to ignore it.
+
+2. **Post-contact dynamics — image starts to matter.** Two failures that
+   look identical in state can diverge after contact because the obstacles
+   are in different places. State doesn't encode obstacle pose; image
+   does. **This is the first natural threshold to enable vision.**
+
+3. **Cross-scene generalisation — image is required.** As soon as
+   libero_object / libero_goal enter training, the scene varies trial-to-
+   trial and the model can no longer memorise "where the table is" from
+   state. Same lesson as §17 of the contact-prediction work: vision wins
+   OOD.
+
+### Recommended sequence
+
+a. **Pilot: state-only on libero_spatial.** Cheapest baseline, isolates
+   the pre-contact regime where state is sufficient. Establishes the floor.
+b. **Add vision specifically for the post-contact tail.** Concretely, gate
+   image attention by `frames_since_contact`: tokens before the first
+   predicted contact attend to state only; tokens after also attend to a
+   small set of image tokens. Ablation gives a publishable single number
+   ("image reduces post-contact MSE by X % with no change to pre-contact").
+c. **Scale up to libero_object/goal.** Image goes on from the start; OOD
+   benefit should widen.
+
+### Lazy alternative if (b) feels too clever
+
+Turn vision on from the start of the pilot but log per-frame loss broken
+down by `frames_since_contact` (0 = pre-contact, ≥ 1 = post-contact). The
+breakdown plot will show whether image is doing work, where, and by how
+much — without needing a gated architecture. Use this if the gated design
+costs more than a day to build; the diagnostic curve is what we care
+about.
+
+## 12. Concrete order of operations
 
 1. Extend `LiberoRunner` to capture and return `post_qpos/qvel/action` arrays
    (verify on a single demo, write to NPZ via a new schema key).
