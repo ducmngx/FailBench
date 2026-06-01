@@ -43,7 +43,7 @@ module load python/3.9.9-jh             # cluster default Python; works for trai
 source "$HOME/failbench_env/bin/activate"
 
 # Repo + data paths.
-export PYTHONPATH="$HOME/FailBench:$PYTHONPATH"
+export PYTHONPATH="$HOME/FailBench:${PYTHONPATH:-}"
 export FAILBENCH_V2_ROOT="$SCRATCH/data/failbench_data/libero/v2"
 
 cd "$HOME/FailBench"
