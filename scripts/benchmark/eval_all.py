@@ -150,8 +150,12 @@ def _eval_one(run_dir: Path, args) -> dict | None:
     overall_preds, overall_targets = [], []
     per_mode_preds = {m: [] for m in FAILURE_MODES}
     per_mode_targets = {m: [] for m in FAILURE_MODES}
-    # Use the dataset's underlying manifest to get failure_mode per trial.
+    # Use the dataset's underlying manifest to get failure_mode + suite per trial.
     failure_modes_per_trial = [ds._base._index[i].failure_mode for i in val_idx]
+    splits_per_trial = [ds._base._index[i].split for i in val_idx]
+    uniq_splits = sorted(set(splits_per_trial))
+    per_split_preds = {s: [] for s in uniq_splits}
+    per_split_targets = {s: [] for s in uniq_splits}
 
     t0 = time.perf_counter()
     seen = 0
@@ -163,12 +167,15 @@ def _eval_one(run_dir: Path, args) -> dict | None:
             target = batch["target_log1p"].cpu().numpy()
             overall_preds.append(pred)
             overall_targets.append(target)
-            # Group by failure mode within this batch.
+            # Group by failure mode + suite within this batch.
             for j in range(pred.shape[0]):
                 fm = failure_modes_per_trial[seen + j]
                 if fm in per_mode_preds:
                     per_mode_preds[fm].append(pred[j])
                     per_mode_targets[fm].append(target[j])
+                sp = splits_per_trial[seen + j]
+                per_split_preds[sp].append(pred[j])
+                per_split_targets[sp].append(target[j])
             seen += pred.shape[0]
     dt = time.perf_counter() - t0
 
@@ -196,6 +203,16 @@ def _eval_one(run_dir: Path, args) -> dict | None:
         Tm = np.stack(per_mode_targets[fm], axis=0)
         per_mode[fm] = M.compute_all(Pm, Tm) | {"n": int(Pm.shape[0])}
 
+    # Per-suite breakdown (one populated cell for single-suite runs, all three
+    # for pooled runs — recovers per-suite numbers from a single pooled model).
+    per_split = {}
+    for sp in uniq_splits:
+        if not per_split_preds[sp]:
+            continue
+        Ps = np.stack(per_split_preds[sp], axis=0)
+        Ts = np.stack(per_split_targets[sp], axis=0)
+        per_split[sp] = M.compute_all(Ps, Ts) | {"n": int(Ps.shape[0])}
+
     print(f"  overall: mse={overall['weighted_mse_log1p']:.4f}  "
           f"iou={overall['soft_iou']:.3f}  kl={overall['symmetric_kl']:.3f}  "
           f"mass_ratio={overall['mass_total_ratio']:.3f}")
@@ -207,10 +224,15 @@ def _eval_one(run_dir: Path, args) -> dict | None:
         overall["latency_ms_b1"] = round(
             M.inference_latency_ms(model, sample, device=args.device), 2)
 
+    if per_split:
+        print("  per-suite: " + "  ".join(
+            f"{sp.replace('libero_', '')}={per_split[sp]['weighted_mse_log1p']:.4f}"
+            f"(n={per_split[sp]['n']})" for sp in sorted(per_split)))
+
     del model
     if args.device == "cuda":
         torch.cuda.empty_cache()
-    return {"overall": overall, "per_mode": per_mode}
+    return {"overall": overall, "per_mode": per_mode, "per_split": per_split}
 
 
 def _write_tables(results: list, out_dir: Path) -> None:
@@ -267,6 +289,25 @@ def _write_tables(results: list, out_dir: Path) -> None:
                 else:
                     row.append("—")
             f.write("| " + " | ".join(row) + " |\n")
+
+        # Per-suite section. Single-suite runs show one populated column; pooled
+        # runs (trained on all three) show a fair per-suite breakdown for one model.
+        f.write("\n\n## Per-suite breakdown\n\n")
+        f.write("`weighted_mse_log1p` (val n in parens). Single-suite runs populate one "
+                "column; pooled runs populate all three.\n\n")
+        all_splits = sorted({s for r in results for s in r.get("per_split", {})})
+        sheader = ["run"] + [s.replace("libero_", "") for s in all_splits]
+        f.write("| " + " | ".join(sheader) + " |\n")
+        f.write("|" + "|".join(["---"] * len(sheader)) + "|\n")
+        for r in results:
+            row = [r["overall"]["run"]]
+            for s in all_splits:
+                ps = r.get("per_split", {})
+                if s in ps:
+                    row.append(f"{ps[s]['weighted_mse_log1p']:.4f} (n={ps[s]['n']})")
+                else:
+                    row.append("—")
+            f.write("| " + " | ".join(row) + " |\n")
     print(f"wrote {out_dir / 'bench_table.md'}")
 
     # Per-mode full JSON for downstream analysis.
@@ -274,6 +315,12 @@ def _write_tables(results: list, out_dir: Path) -> None:
         json.dump([{"run": r["overall"]["run"], "per_mode": r["per_mode"]}
                    for r in results], f, indent=2)
     print(f"wrote {out_dir / 'bench_per_mode.json'}")
+
+    # Per-suite full JSON for downstream analysis.
+    with open(out_dir / "bench_per_split.json", "w") as f:
+        json.dump([{"run": r["overall"]["run"], "per_split": r.get("per_split", {})}
+                   for r in results], f, indent=2)
+    print(f"wrote {out_dir / 'bench_per_split.json'}")
 
 
 def main():
