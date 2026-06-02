@@ -42,6 +42,18 @@ for CFG in "${MODEL_CONFIGS[@]}"; do
   done
 done
 
+# Pooled headline: ONE model per (config, seed) trained on ALL three suites
+# (libero_spatial + libero_object + libero_goal pooled). 5 configs × 3 seeds = 15 runs.
+# Rows have NO split token — the pooled sbatch passes all three suites explicitly and
+# parses SEED as the last token. Per-suite numbers are recovered at eval time
+# (eval_all.py "Per-suite breakdown"). Reuses MODEL_CONFIGS as the single source of truth.
+POOLED_CONFIGS=()
+for CFG in "${MODEL_CONFIGS[@]}"; do
+  for SEED in "${SEEDS[@]}"; do
+    POOLED_CONFIGS+=("${CFG} ${SEED}")   # row: MODEL MOD T [EXTRA...] SEED
+  done
+done
+
 # Pretty-print when invoked directly.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   printf "%-4s  %-12s  %-50s  %-3s  %-15s  %-4s  %s\n" \
@@ -65,5 +77,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     i=$((i+1))
   done
   echo
-  echo "Total runs: ${#SWEEP_CONFIGS[@]}"
+  echo "Total per-suite runs (SWEEP_CONFIGS): ${#SWEEP_CONFIGS[@]}"
+  echo "Total pooled runs   (POOLED_CONFIGS): ${#POOLED_CONFIGS[@]}"
 fi
