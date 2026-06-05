@@ -34,21 +34,33 @@ class V2Index:
     is_holding: bool
 
 
-def _load_manifest(path: Path, v2_root: Optional[Path] = None) -> list:
+def _load_manifest(path: Path, v2_root: Optional[Path] = None,
+                   h5_layout: str = "split") -> list:
     """Load a v2 manifest, optionally rewriting h5_path under a new root.
 
-    When ``v2_root`` is provided, the stored ``h5_path`` (an absolute path
-    from the machine that built the manifest) is replaced with
-    ``v2_root / split / (task + ".h5")``. This is how the dataset works on
-    a cluster after rsync — the manifest came from somewhere else but the
-    files live under a new prefix.
+    Parameters
+    ----------
+    path
+        Manifest CSV path.
+    v2_root
+        When provided, rewrites the stored absolute ``h5_path`` under this
+        new root. Layout depends on ``h5_layout``.
+    h5_layout
+        Either ``"split"`` (LIBERO: ``v2_root/<split>/<task>.h5``) or
+        ``"flat"`` (RoboCasa: ``v2_root/<task>.h5``). Ignored when
+        ``v2_root`` is None.
     """
     rows: list = []
     with open(path) as f:
         reader = csv.DictReader(f)
         for r in reader:
             if v2_root is not None:
-                h5_path = str(v2_root / r["split"] / (r["task"] + ".h5"))
+                if h5_layout == "split":
+                    h5_path = str(v2_root / r["split"] / (r["task"] + ".h5"))
+                elif h5_layout == "flat":
+                    h5_path = str(v2_root / (r["task"] + ".h5"))
+                else:
+                    raise ValueError(f"unknown h5_layout {h5_layout!r}")
             else:
                 h5_path = r["h5_path"]
             rows.append(V2Index(
@@ -187,3 +199,95 @@ class LiberoV2Dataset:
             keys |= {"settle_step_idx", "settle_qpos", "settle_qvel",
                      "settle_gripper_qpos", "settle_obj_pos", "settle_obj_quat"}
         return keys
+
+
+# --------------------------------------------------------------------------
+# Pooled multi-source dataset (LIBERO + RoboCasa)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class V2Source:
+    """One v2 corpus root + manifest layout.
+
+    ``name``  — short tag stamped on each sample (``"libero"`` / ``"robocasa"``).
+    ``root``  — directory containing per-task HDF5 files (and per-split
+                manifests, for LIBERO).
+    ``manifests``  — explicit manifest CSV paths to ingest. For LIBERO this is
+                ``[root/libero_spatial/manifest.csv, root/libero_object/...]``;
+                for RoboCasa it's just ``[root/manifest.csv]``.
+    ``h5_layout``  — ``"split"`` (LIBERO) or ``"flat"`` (RoboCasa). Tells the
+                manifest loader how to rewrite ``h5_path`` under ``root``.
+    """
+    name: str
+    root: Path
+    manifests: tuple
+    h5_layout: str = "split"
+
+    @staticmethod
+    def libero(v2_root: str | Path,
+               splits: Iterable[str] = ("libero_spatial", "libero_object", "libero_goal"),
+               ) -> "V2Source":
+        v2_root = Path(v2_root)
+        return V2Source(
+            name="libero",
+            root=v2_root,
+            manifests=tuple(v2_root / s / "manifest.csv" for s in splits),
+            h5_layout="split",
+        )
+
+    @staticmethod
+    def robocasa(v2_root: str | Path) -> "V2Source":
+        v2_root = Path(v2_root)
+        return V2Source(
+            name="robocasa",
+            root=v2_root,
+            manifests=(v2_root / "manifest.csv",),
+            h5_layout="flat",
+        )
+
+
+class PooledV2Dataset(LiberoV2Dataset):
+    """Trial-level dataset over multiple v2 sources (LIBERO + RoboCasa).
+
+    Subclasses :class:`LiberoV2Dataset` to inherit the ``_payload_keys`` /
+    ``__getitem__`` logic; only the index construction changes.
+
+    Sample dicts gain a ``"source"`` key (``"libero"`` / ``"robocasa"``) for
+    per-source loss weighting or per-source eval splits at training time.
+    """
+
+    def __init__(self, sources: Iterable[V2Source],
+                 **kwargs):
+        # Skip the parent constructor's manifest loading; build _index manually.
+        sources = list(sources)
+        if not sources:
+            raise ValueError("PooledV2Dataset needs at least one source")
+        # First source's root used as a placeholder for the parent's v2_root
+        # attribute (read by _payload_keys / __getitem__ only via row.h5_path).
+        self.v2_root = sources[0].root
+        self.splits = tuple()
+        self._sources = sources
+        self.use_window = kwargs.get("use_window", True)
+        self.use_wrist_cam = kwargs.get("use_wrist_cam", True)
+        self.use_depth = kwargs.get("use_depth", True)
+        self.use_settle = kwargs.get("use_settle", False)
+        self.use_failure_mode = kwargs.get("use_failure_mode", True)
+        self._keep = (set(kwargs["keep_keys"])
+                      if kwargs.get("keep_keys") is not None else None)
+
+        self._index: list = []
+        self._source_for_index: list = []  # parallel array of source names
+        for src in sources:
+            for manifest in src.manifests:
+                if not manifest.exists():
+                    raise FileNotFoundError(f"Missing manifest: {manifest}")
+                rows = _load_manifest(manifest, v2_root=src.root,
+                                      h5_layout=src.h5_layout)
+                self._index.extend(rows)
+                self._source_for_index.extend([src.name] * len(rows))
+
+    def __getitem__(self, i: int) -> dict:
+        d = super().__getitem__(i)
+        d["source"] = self._source_for_index[i]
+        return d

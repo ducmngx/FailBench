@@ -39,6 +39,7 @@ from planner.risk.benchmark_dataset import (  # noqa: E402
     BenchmarkDataset, MarginalBenchmarkDataset, ModalityConfig, TargetConfig,
     demo_stratified_split, task_held_out_split,
 )
+from planner.risk.dataset_v2 import V2Source  # noqa: E402
 from planner.risk.models import make_model  # noqa: E402
 
 ALL_MODALITIES = ("state", "goal", "rgb", "depth", "dino", "failure_mode", "failure_joints")
@@ -70,6 +71,10 @@ def parse_args():
                                                 "/media/aaron/F/failbench/libero/v2")))
     ap.add_argument("--splits", nargs="+",
                     default=["libero_spatial", "libero_object", "libero_goal"])
+    ap.add_argument("--robocasa_v2_root", type=Path, default=None,
+                    help="Pool RoboCasa v2 alongside LIBERO. Manifest expected "
+                         "at <robocasa_v2_root>/manifest.csv and <task>.h5 files "
+                         "directly under it (no split layer).")
     ap.add_argument("--model", default="mlp")
     ap.add_argument("--modalities", default="state",
                     help=f"comma-separated subset of {ALL_MODALITIES}")
@@ -209,14 +214,29 @@ def main():
         )
         mod_cfg = ds.modalities   # MarginalBenchmarkDataset may have stripped oracle flags
     else:
-        ds = BenchmarkDataset(
-            args.v2_root,
-            modalities=mod_cfg,
-            target_cfg=TargetConfig(sigma_px=args.sigma_px, log1p=True),
-            splits=tuple(args.splits),
-            dino_cache_root=args.dino_cache_root if mod_cfg.dino else None,
-            use_window=(args.T == 8),
-        )
+        if args.robocasa_v2_root is not None:
+            sources = [
+                V2Source.libero(args.v2_root, splits=tuple(args.splits)),
+                V2Source.robocasa(args.robocasa_v2_root),
+            ]
+            print(f"pooled training: LIBERO ({args.v2_root}) "
+                  f"+ RoboCasa ({args.robocasa_v2_root})")
+            ds = BenchmarkDataset(
+                sources=sources,
+                modalities=mod_cfg,
+                target_cfg=TargetConfig(sigma_px=args.sigma_px, log1p=True),
+                dino_cache_root=args.dino_cache_root if mod_cfg.dino else None,
+                use_window=(args.T == 8),
+            )
+        else:
+            ds = BenchmarkDataset(
+                args.v2_root,
+                modalities=mod_cfg,
+                target_cfg=TargetConfig(sigma_px=args.sigma_px, log1p=True),
+                splits=tuple(args.splits),
+                dino_cache_root=args.dino_cache_root if mod_cfg.dino else None,
+                use_window=(args.T == 8),
+            )
     val_task_names = None
     if args.split_by == "task":
         train_idx, val_idx, val_task_names = task_held_out_split(

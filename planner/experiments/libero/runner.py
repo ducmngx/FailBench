@@ -40,6 +40,23 @@ from planner.experiments.runner import DataSample, FailureResult
 
 
 @dataclass
+class SceneOverrides:
+    """Caller-supplied scene metadata for :meth:`LiberoRunner.run_v2`.
+
+    LIBERO can derive these automatically from body names (``_BODY_TABLE_TOKENS``,
+    LIBERO-style non-robot bodies). RoboCasa has hundreds of kitchen-fixture
+    bodies and the auto-detection picks up walls/floor/lighting along with the
+    manipulated objects — so the RoboCasa adapter resolves the small movable-
+    object allowlist from ``ep_meta["object_cfgs"]`` and passes it here.
+
+    All fields are optional; ``None`` means "use the LIBERO default heuristic".
+    """
+    object_body_ids: Optional[List[int]] = None       # pre-resolved manipulated objects
+    object_names: Optional[List[str]] = None          # paired with object_body_ids
+    scene_metadata: Optional[dict] = None             # table_z, aabb, entities (pre-built)
+
+
+@dataclass
 class V2CaptureSpec:
     """Enables v2-style enhanced capture inside :meth:`LiberoRunner.run_v2`.
 
@@ -93,11 +110,19 @@ class LiberoTrialConfig:
 class LiberoRunner:
     """Replays one LIBERO demo and injects failures."""
 
-    def __init__(self, demo: LiberoDemo, config: LiberoTrialConfig):
+    def __init__(self, demo: LiberoDemo, config: LiberoTrialConfig,
+                 mjcf_path: Optional[str] = None,
+                 scene_overrides: Optional[SceneOverrides] = None):
         self.demo = demo
         self.config = config
+        self.scene_overrides = scene_overrides or SceneOverrides()
 
-        xml_path = materialise_mjcf(demo.model_xml)
+        # ``mjcf_path``: caller-provided materialised XML path. Used by the
+        # RoboCasa adapter to bypass LIBERO's path-rewriter, which would
+        # corrupt RoboCasa absolute paths (LIBERO remaps "robosuite" globally,
+        # pointing RoboCasa Panda meshes at LIBERO's robosuite 1.4.0 instead
+        # of the ShahRutav 1.5.0 fork that PandaMobile needs).
+        xml_path = mjcf_path if mjcf_path is not None else materialise_mjcf(demo.model_xml)
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
         self.handles = resolve_model_handles(self.model)
@@ -278,10 +303,17 @@ class LiberoRunner:
 
         # Read ee_states once for goal extraction (goal looks ahead in the
         # demo and we don't seed the sim there, so we read obs directly).
+        # RoboCasa HDF5s lack obs/ee_states; fall back to obs/robot0_eef_pos
+        # padded with zeros — compute_goal only reads [:, :3] (the position).
         import h5py
         with h5py.File(demo.hdf5_path, "r") as f:
-            ee_states = np.asarray(
-                f[f"data/{demo.demo_key}/obs/ee_states"]).astype(np.float64)
+            obs = f[f"data/{demo.demo_key}/obs"]
+            if "ee_states" in obs:
+                ee_states = np.asarray(obs["ee_states"]).astype(np.float64)
+            else:
+                pos = np.asarray(obs["robot0_eef_pos"]).astype(np.float64)
+                ee_states = np.zeros((pos.shape[0], 6), dtype=np.float64)
+                ee_states[:, :3] = pos
 
         window_state = {
             "window_qpos": win_qpos,
@@ -297,11 +329,22 @@ class LiberoRunner:
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, wrist)])
 
         # Scene metadata
-        scene_meta = extract_scene_metadata(self.model, self.data)
+        scene_meta = (self.scene_overrides.scene_metadata
+                      if self.scene_overrides.scene_metadata is not None
+                      else extract_scene_metadata(self.model, self.data))
 
-        # Object body ids + pre poses
-        obj_bids = _object_body_ids(self.model)
-        obj_names = _object_names_fn(self.model, obj_bids)
+        # Object body ids + pre poses — RoboCasa scenes have hundreds of
+        # non-robot bodies (walls / floor / fixtures). Callers can pass a
+        # pre-resolved allowlist (from ep_meta["object_cfgs"] for RoboCasa)
+        # via SceneOverrides; LIBERO uses the auto-detection.
+        if self.scene_overrides.object_body_ids is not None:
+            obj_bids = list(self.scene_overrides.object_body_ids)
+            obj_names = (list(self.scene_overrides.object_names)
+                         if self.scene_overrides.object_names is not None
+                         else _object_names_fn(self.model, obj_bids))
+        else:
+            obj_bids = _object_body_ids(self.model)
+            obj_names = _object_names_fn(self.model, obj_bids)
         obj_pos_pre, obj_quat_pre = snapshot_object_poses(self.model, self.data, obj_bids)
 
         # Pre-failure renders (single frame, both cams)

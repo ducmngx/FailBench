@@ -28,6 +28,11 @@ external/LIBERO/datasets/
 external/LIBERO/**/*.egg-info/
 external/LIBERO/**/__pycache__/
 
+# RoboCasa sidecars — entire clone trees (mimicdroid-robocasa + ShahRutav/robosuite,
+# assets downloaded via robocasa/scripts/download_kitchen_assets, ~21 GB).
+external/robocasa/
+external/robosuite_for_robocasa/
+
 # GraspGen precomputed grasps — regenerate via scripts/precompute_grasps.py
 cache/graspgen/
 

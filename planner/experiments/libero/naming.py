@@ -25,6 +25,7 @@ _ARM_JOINT_CANDIDATES = [
 
 _GRIPPER_FINGER_JOINT_CANDIDATES = [
     ["gripper0_finger_joint1", "gripper0_finger_joint2"],
+    ["gripper0_right_finger_joint1", "gripper0_right_finger_joint2"],
     ["finger_joint1", "finger_joint2"],
 ]
 
@@ -33,6 +34,7 @@ _GRIPPER_FINGER_JOINT_CANDIDATES = [
 # ``actuator8`` when running on our own panda.xml.
 _GRIPPER_FINGER_ACTUATOR_CANDIDATES = [
     ["gripper0_gripper_finger_joint1", "gripper0_gripper_finger_joint2"],
+    ["gripper0_right_gripper_finger_joint1", "gripper0_right_gripper_finger_joint2"],
     ["gripper0_finger_joint1", "gripper0_finger_joint2"],
 ]
 _GRIPPER_SCALAR_ACTUATOR_CANDIDATES = [
@@ -42,17 +44,22 @@ _GRIPPER_SCALAR_ACTUATOR_CANDIDATES = [
 
 _EE_SITE_CANDIDATES = [
     "gripper0_grip_site",
+    "gripper0_right_grip_site",
     "robot0_grip_site",
     "robot0_ee",
     "robot0_eef",
     "end_effector",
 ]
 
-_AGENTVIEW_CAM_CANDIDATES = ["agentview", "frontview", "front_cam"]
+_AGENTVIEW_CAM_CANDIDATES = [
+    "agentview", "frontview", "front_cam",
+    "robot0_agentview_center", "robot0_agentview_left", "robot0_frontview",
+]
 _EE_CAM_CANDIDATES = ["robot0_eye_in_hand", "eye_in_hand", "ee_cam"]
 
 # Robot body-name prefixes used to build the "is-robot" mask in ContactExtractor.
-ROBOSUITE_ROBOT_BODY_PREFIXES = ("robot0_", "gripper0_", "mount0_")
+# ``base0_`` covers RoboCasa's Omron mobile base under PandaMobile.
+ROBOSUITE_ROBOT_BODY_PREFIXES = ("robot0_", "gripper0_", "mount0_", "base0_")
 
 
 @dataclass

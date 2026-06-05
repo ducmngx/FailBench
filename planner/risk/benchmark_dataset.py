@@ -29,7 +29,9 @@ from typing import Iterable, Optional
 
 import numpy as np
 
-from planner.risk.dataset_v2 import LiberoV2Dataset, failure_mode_onehot
+from planner.risk.dataset_v2 import (
+    LiberoV2Dataset, PooledV2Dataset, V2Source, failure_mode_onehot,
+)
 from planner.risk.v2_targets import Weighting, build_agentview_target
 
 
@@ -120,13 +122,23 @@ class BenchmarkDataset:
     """
 
     def __init__(self,
-                 v2_root: str | Path,
+                 v2_root: str | Path | None = None,
                  modalities: ModalityConfig = ModalityConfig(),
                  target_cfg: TargetConfig = TargetConfig(),
                  *,
                  splits: Iterable[str] = ("libero_spatial", "libero_object", "libero_goal"),
+                 sources: Optional[Iterable[V2Source]] = None,
                  dino_cache_root: Optional[str | Path] = None,
                  use_window: bool = True):
+        """Build a benchmark sample stream from one or more v2 corpora.
+
+        Pass ``v2_root`` for the single-corpus LIBERO path (backwards-compat).
+        Pass ``sources=[V2Source.libero(...), V2Source.robocasa(...)]`` to pool
+        across corpora; the resulting sample dicts carry a ``"source"`` field
+        (``"libero"`` / ``"robocasa"``) so trainers can split eval per source.
+        """
+        if (v2_root is None) == (sources is None):
+            raise ValueError("pass exactly one of v2_root= or sources=")
         self.modalities = modalities
         self.target_cfg = target_cfg
         self.use_window = use_window
@@ -137,15 +149,17 @@ class BenchmarkDataset:
         needs_rgb = modalities.rgb
         needs_depth = modalities.depth
 
-        self._base = LiberoV2Dataset(
-            v2_root,
-            splits=splits,
+        common_kwargs = dict(
             use_window=use_window,
             use_wrist_cam=False,
             use_depth=needs_depth,
             use_failure_mode=modalities.failure_mode,
             keep_keys=self._payload_keys(needs_rgb, needs_depth),
         )
+        if sources is not None:
+            self._base = PooledV2Dataset(sources=list(sources), **common_kwargs)
+        else:
+            self._base = LiberoV2Dataset(v2_root, splits=splits, **common_kwargs)
 
     # --- public API -----------------------------------------------------
 
@@ -159,6 +173,8 @@ class BenchmarkDataset:
             "task": d["task"],
             "split": d["split"],
         }
+        if "source" in d:
+            out["source"] = d["source"]
 
         if self.modalities.state:
             if self.use_window and "window_qpos" in d:
