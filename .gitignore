@@ -49,6 +49,10 @@ scenes/*/datasets/
 /out/
 /cache/
 
+# HuggingFace release tree — derived artifact built by scripts/data/build_hf_release.py.
+# Contains symlinks into /media/aaron/F that won't survive a git clone.
+/hf_release/
+
 # Training-run stdout logs (the run dirs in /runs/ already contain metrics.csv
 # and best.pt; these are just tee'd stdout copies).
 /logs/

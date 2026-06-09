@@ -34,8 +34,30 @@ class V2Index:
     is_holding: bool
 
 
+def _load_quarantine(path: Path, source: str) -> set:
+    """Load a quarantine CSV and return the set of (split, task, trial_id) tuples
+    matching the given source. Empty set if path doesn't exist (no-op).
+
+    The quarantine CSV is produced by ``scripts/data/verify_corpus.py``. Each row
+    identifies a trial we will exclude from the published manifest. Loaders honour
+    it at index construction so downstream code never sees a quarantined trial.
+    """
+    if not path.exists():
+        return set()
+    out = set()
+    with open(path) as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            if r.get("source", "") != source:
+                continue
+            out.add((r["split"], r["task"], r["trial_id"]))
+    return out
+
+
 def _load_manifest(path: Path, v2_root: Optional[Path] = None,
-                   h5_layout: str = "split") -> list:
+                   h5_layout: str = "split",
+                   quarantine_path: Optional[Path] = None,
+                   quarantine_source: str = "") -> list:
     """Load a v2 manifest, optionally rewriting h5_path under a new root.
 
     Parameters
@@ -49,11 +71,26 @@ def _load_manifest(path: Path, v2_root: Optional[Path] = None,
         Either ``"split"`` (LIBERO: ``v2_root/<split>/<task>.h5``) or
         ``"flat"`` (RoboCasa: ``v2_root/<task>.h5``). Ignored when
         ``v2_root`` is None.
+    quarantine_path
+        Optional path to a quarantine CSV (produced by
+        ``scripts/data/verify_corpus.py``). Rows whose
+        ``(split, task, trial_id)`` matches an entry in the quarantine are
+        dropped at index construction. Default ``None`` preserves backward
+        compatibility (no filtering).
+    quarantine_source
+        Name of this corpus in the quarantine file's ``source`` column
+        (``"libero"`` or ``"robocasa"``). Required if ``quarantine_path`` is
+        set, ignored otherwise.
     """
+    drop = set()
+    if quarantine_path is not None:
+        drop = _load_quarantine(quarantine_path, quarantine_source)
     rows: list = []
     with open(path) as f:
         reader = csv.DictReader(f)
         for r in reader:
+            if drop and (r["split"], r["task"], r["trial_id"]) in drop:
+                continue
             if v2_root is not None:
                 if h5_layout == "split":
                     h5_path = str(v2_root / r["split"] / (r["task"] + ".h5"))
@@ -124,7 +161,8 @@ class LiberoV2Dataset:
                  *, use_window: bool = True, use_wrist_cam: bool = True,
                  use_depth: bool = True, use_settle: bool = False,
                  use_failure_mode: bool = True,
-                 keep_keys: Optional[Iterable[str]] = None):
+                 keep_keys: Optional[Iterable[str]] = None,
+                 quarantine_path: Optional[str | Path] = None):
         self.v2_root = Path(v2_root)
         self.splits = tuple(splits)
         self.use_window = use_window
@@ -133,13 +171,20 @@ class LiberoV2Dataset:
         self.use_settle = use_settle
         self.use_failure_mode = use_failure_mode
         self._keep = set(keep_keys) if keep_keys is not None else None
+        # Auto-detect quarantine.csv if not explicitly passed.
+        if quarantine_path is None and (self.v2_root / "quarantine.csv").exists():
+            quarantine_path = self.v2_root / "quarantine.csv"
+        self._quarantine_path = Path(quarantine_path) if quarantine_path else None
 
         self._index: list = []
         for s in self.splits:
             mp = self.v2_root / s / "manifest.csv"
             if not mp.exists():
                 raise FileNotFoundError(f"Missing v2 manifest: {mp}")
-            self._index.extend(_load_manifest(mp, v2_root=self.v2_root))
+            self._index.extend(_load_manifest(
+                mp, v2_root=self.v2_root,
+                quarantine_path=self._quarantine_path,
+                quarantine_source="libero"))
 
     def __len__(self) -> int:
         return len(self._index)
@@ -218,32 +263,46 @@ class V2Source:
                 for RoboCasa it's just ``[root/manifest.csv]``.
     ``h5_layout``  — ``"split"`` (LIBERO) or ``"flat"`` (RoboCasa). Tells the
                 manifest loader how to rewrite ``h5_path`` under ``root``.
+    ``quarantine_path``  — optional path to a quarantine CSV (from
+                ``scripts/data/verify_corpus.py``). When set, rows whose
+                ``(split, task, trial_id)`` matches an entry tagged with this
+                source are dropped at index construction. Auto-detected from
+                ``<root>/quarantine.csv`` if a default exists.
     """
     name: str
     root: Path
     manifests: tuple
     h5_layout: str = "split"
+    quarantine_path: Optional[Path] = None
 
     @staticmethod
     def libero(v2_root: str | Path,
                splits: Iterable[str] = ("libero_spatial", "libero_object", "libero_goal"),
+               quarantine_path: Optional[str | Path] = None,
                ) -> "V2Source":
         v2_root = Path(v2_root)
+        if quarantine_path is None and (v2_root / "quarantine.csv").exists():
+            quarantine_path = v2_root / "quarantine.csv"
         return V2Source(
             name="libero",
             root=v2_root,
             manifests=tuple(v2_root / s / "manifest.csv" for s in splits),
             h5_layout="split",
+            quarantine_path=Path(quarantine_path) if quarantine_path else None,
         )
 
     @staticmethod
-    def robocasa(v2_root: str | Path) -> "V2Source":
+    def robocasa(v2_root: str | Path,
+                 quarantine_path: Optional[str | Path] = None) -> "V2Source":
         v2_root = Path(v2_root)
+        if quarantine_path is None and (v2_root / "quarantine.csv").exists():
+            quarantine_path = v2_root / "quarantine.csv"
         return V2Source(
             name="robocasa",
             root=v2_root,
             manifests=(v2_root / "manifest.csv",),
             h5_layout="flat",
+            quarantine_path=Path(quarantine_path) if quarantine_path else None,
         )
 
 
@@ -283,7 +342,9 @@ class PooledV2Dataset(LiberoV2Dataset):
                 if not manifest.exists():
                     raise FileNotFoundError(f"Missing manifest: {manifest}")
                 rows = _load_manifest(manifest, v2_root=src.root,
-                                      h5_layout=src.h5_layout)
+                                      h5_layout=src.h5_layout,
+                                      quarantine_path=src.quarantine_path,
+                                      quarantine_source=src.name)
                 self._index.extend(rows)
                 self._source_for_index.extend([src.name] * len(rows))
 
