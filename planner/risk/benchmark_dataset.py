@@ -129,6 +129,7 @@ class BenchmarkDataset:
                  splits: Iterable[str] = ("libero_spatial", "libero_object", "libero_goal"),
                  sources: Optional[Iterable[V2Source]] = None,
                  dino_cache_root: Optional[str | Path] = None,
+                 target_cache_root: Optional[str | Path] = None,
                  use_window: bool = True):
         """Build a benchmark sample stream from one or more v2 corpora.
 
@@ -136,6 +137,15 @@ class BenchmarkDataset:
         Pass ``sources=[V2Source.libero(...), V2Source.robocasa(...)]`` to pool
         across corpora; the resulting sample dicts carry a ``"source"`` field
         (``"libero"`` / ``"robocasa"``) so trainers can split eval per source.
+
+        ``target_cache_root`` (optional): directory of precomputed contact
+        projections (see ``scripts/data/precompute_targets.py``). When set,
+        ``__getitem__`` returns a variable-length ``target_projection`` field
+        (``(N_in_frame, 3) float32 [u, v, force_mag]``) and a
+        ``failure_prob`` scalar instead of the dense ``target`` /
+        ``target_log1p`` heatmaps. Trainers should then call
+        ``planner.risk.v2_targets.build_target_from_projection`` on GPU per
+        batch — ~30× faster end-to-end than the on-the-fly CPU build.
         """
         if (v2_root is None) == (sources is None):
             raise ValueError("pass exactly one of v2_root= or sources=")
@@ -145,6 +155,10 @@ class BenchmarkDataset:
         self.dino_cache_root = Path(dino_cache_root) if dino_cache_root else None
         if modalities.dino and self.dino_cache_root is None:
             raise ValueError("modalities.dino=True requires dino_cache_root")
+
+        self.target_cache_root = Path(target_cache_root) if target_cache_root else None
+        # LRU cache of (split, task) -> open h5py.File handle for target cache.
+        self._target_cache_files: dict = {}
 
         needs_rgb = modalities.rgb
         needs_depth = modalities.depth
@@ -218,33 +232,75 @@ class BenchmarkDataset:
             out["failure_joints"] = jh
 
         # --- target ---
-        tgt = build_agentview_target(
-            d,
-            sigma_px=self.target_cfg.sigma_px,
-            weighting=self.target_cfg.weighting,
-        )
-        out["target"] = tgt.heatmap
-        if self.target_cfg.log1p:
-            out["target_log1p"] = np.log1p(tgt.heatmap).astype(np.float32)
-        out["target_mass"] = np.float32(tgt.weight_in_frame)
+        if self.target_cache_root is not None:
+            proj, fp = self._load_cached_projection(d)
+            out["target_projection"] = proj                   # (N_i, 3) float32
+            out["failure_prob"] = np.float32(fp)
+            out["target_mass"] = np.float32(proj[:, 2].sum() * fp) if proj.shape[0] else np.float32(0.0)
+        else:
+            tgt = build_agentview_target(
+                d,
+                sigma_px=self.target_cfg.sigma_px,
+                weighting=self.target_cfg.weighting,
+            )
+            out["target"] = tgt.heatmap
+            if self.target_cfg.log1p:
+                out["target_log1p"] = np.log1p(tgt.heatmap).astype(np.float32)
+            out["target_mass"] = np.float32(tgt.weight_in_frame)
         return out
+
+    def _load_cached_projection(self, d: dict):
+        """Read the (N, 3) [u, v, force_mag] projection + failure_prob from cache.
+
+        Returns ``(projection, failure_prob)``. Empty `(0, 3)` if the trial has
+        no in-frame contacts (and that's recorded explicitly in the cache).
+        Raises FileNotFoundError if the cache file is missing for this
+        (split, task) — re-run `scripts/data/precompute_targets.py`.
+        """
+        import h5py
+        split = d.get("split", "")
+        task = d.get("task", "")
+        tid  = d["trial_id"]
+        key = (split, task)
+        f = self._target_cache_files.get(key)
+        if f is None:
+            cache_path = self.target_cache_root / split / f"{task}.h5"
+            if not cache_path.exists():
+                raise FileNotFoundError(
+                    f"missing target cache for {split}/{task}: {cache_path}. "
+                    f"Run scripts/data/precompute_targets.py.")
+            f = h5py.File(cache_path, "r")
+            # Small LRU: drop a stale handle if cache grows over 64 files.
+            if len(self._target_cache_files) > 64:
+                old_key = next(iter(self._target_cache_files))
+                self._target_cache_files[old_key].close()
+                del self._target_cache_files[old_key]
+            self._target_cache_files[key] = f
+        g = f[tid]
+        proj = np.asarray(g["projection"], dtype=np.float32)
+        fp   = float(g.attrs.get("failure_prob", 1.0))
+        return proj, fp
 
     # --- internals ------------------------------------------------------
 
     def _payload_keys(self, needs_rgb: bool, needs_depth: bool) -> set:
         """Minimal HDF5 read set for the requested modalities.
 
-        Always includes the target inputs (contacts + agentview calibration +
-        scalar failure_prob attr) and the trial identity attrs.
+        When ``target_cache_root`` is unset we read the contact arrays + camera
+        calibration so ``build_agentview_target`` can run inside ``__getitem__``.
+        With the cache, all of that comes from the cache file instead — drop
+        ~200 KB of per-trial IO that the dataset would otherwise waste.
         """
         keys = {
-            # target inputs
-            "contact_positions", "contact_force_world", "contact_forces",
-            "cam_agentview_pos", "cam_agentview_mat0",
-            "cam_agentview_fovy", "cam_agentview_size",
             # always-on identity-ish single-frame fallbacks
             "pre_qpos", "pre_qvel", "pre_ee_pos", "pre_gripper_ctrl",
         }
+        if self.target_cache_root is None:
+            keys |= {
+                "contact_positions", "contact_force_world", "contact_forces",
+                "cam_agentview_pos", "cam_agentview_mat0",
+                "cam_agentview_fovy", "cam_agentview_size",
+            }
         if self.modalities.state and self.use_window:
             keys |= {"window_qpos", "window_qvel",
                      "window_ee_pos", "window_gripper_ctrl"}
