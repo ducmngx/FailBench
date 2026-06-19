@@ -218,6 +218,7 @@ class SafeLiberoEnv(gym.Env):
         mode_prior: Optional[Dict[str, float]] = None,
         severity: Optional[Dict[str, float]] = None,
         rgb_in_obs: bool = True,
+        pred_features_in_obs: bool = True,
         seed: Optional[int] = None,
         predictor_device: Optional[str] = None,
     ):
@@ -235,6 +236,7 @@ class SafeLiberoEnv(gym.Env):
         self.mode_prior = mode_prior
         self.severity = severity
         self.rgb_in_obs = bool(rgb_in_obs)
+        self.pred_features_in_obs = bool(pred_features_in_obs)
         self._rng = random.Random(seed)
         self._np_rng = np.random.default_rng(seed)
 
@@ -310,6 +312,18 @@ class SafeLiberoEnv(gym.Env):
             obs_spaces["agentview_rgb"] = spaces.Box(
                 low=0, high=255, shape=(self.image_h, self.image_w, 3),
                 dtype=np.uint8)
+        if self.pred_features_in_obs:
+            # Fixed canonical body order for the per-body vector so the policy
+            # sees the same dimensions across episodes.  Anything not present
+            # in masks gets 0 by construction in _build_obs.
+            self._body_names = sorted(self._masks.keys())
+            K = len(self._body_names)
+            obs_spaces["pred_per_body"] = spaces.Box(
+                low=-np.inf, high=np.inf, shape=(K,), dtype=np.float32)
+            obs_spaces["gate_prob"] = spaces.Box(
+                low=0.0, high=1.0, shape=(1,), dtype=np.float32)
+        else:
+            self._body_names = []
         self.observation_space = spaces.Dict(obs_spaces)
 
     # ------------------------------------------------------------------ API
@@ -358,15 +372,31 @@ class SafeLiberoEnv(gym.Env):
 
         obs = self._scheduler.reset()
 
-        # Seed sim state from demo init
+        # Seed sim state from demo init.  LIBERO's own evaluation harness
+        # (libero/lifelong/evaluate.py) uses env.set_init_state() + 5 zero-
+        # action warmup steps to settle the OSC controller.  Direct
+        # mj_forward leaves the controller's goal stale, which makes the
+        # very first action interpretation diverge from the demo's frame
+        # and causes BC/demo-replay to fail.
         if init_state is not None:
-            model, data = self._deps["unwrap_sim"](self._env.sim)
-            nq, nv = model.nq, model.nv
-            flat = np.asarray(init_state, dtype=np.float64)
-            off = 1 if flat.shape[0] == 1 + nq + nv else 0
-            data.qpos[:nq] = flat[off:off + nq]
-            data.qvel[:nv] = flat[off + nq:off + nq + nv]
-            mujoco.mj_forward(model, data)
+            try:
+                self._env.set_init_state(np.asarray(init_state).astype(
+                    np.float64))
+                # Warmup steps: 5 zero-action steps to advance the controller
+                # into a stable state matching the demo's recording.
+                action_dim = self._env.env.robots[0].action_dim
+                zero_action = np.zeros(action_dim, dtype=np.float32)
+                for _ in range(5):
+                    obs, _, _, _ = self._env.step(zero_action)
+            except Exception as e:
+                # Fall back to direct qpos/qvel write
+                model, data = self._deps["unwrap_sim"](self._env.sim)
+                nq, nv = model.nq, model.nv
+                flat = np.asarray(init_state, dtype=np.float64)
+                off = 1 if flat.shape[0] == 1 + nq + nv else 0
+                data.qpos[:nq] = flat[off:off + nq]
+                data.qvel[:nv] = flat[off + nq:off + nq + nv]
+                mujoco.mj_forward(model, data)
 
         # Rebuild damage accumulator against the fresh (post-reset) model
         model, data = self._deps["unwrap_sim"](self._env.sim)
@@ -383,7 +413,7 @@ class SafeLiberoEnv(gym.Env):
         return self._build_obs(obs), self._build_info(extra={})
 
     def step(self, action):
-        obs, _, libero_done, libero_info = self._scheduler.step(action)
+        obs, libero_reward, libero_done, libero_info = self._scheduler.step(action)
         self._step_idx += 1
 
         # Damage update
@@ -397,16 +427,17 @@ class SafeLiberoEnv(gym.Env):
                 and (self._step_idx - 1) % self.predictor_every_k == 0):
             self._update_predictor(obs)
 
-        # Reward components
-        # Task reward: LIBERO returns success only on episode end; pass it
-        # through as-is.  Trainers that want shaped task reward can add a
-        # potential function on top of info["r_task"].
-        r_task = 1.0 if libero_info.get("success", False) else 0.0
+        # Reward components.  LIBERO's OffScreenRenderEnv returns r=1.0
+        # on the success step (BDDL predicate satisfied) and r=0 otherwise.
+        # It does NOT populate info["success"] — info is typically empty.
+        # So we use libero_reward directly as the success signal.
+        success = bool(libero_reward > 0.5)
+        r_task = float(libero_reward)
         r_pred = -self.lambda_pred * float(self._last_pred_risk)
         r_dmg = -self.lambda_dmg * float(damage_delta)
         reward = r_task + r_pred + r_dmg
 
-        terminated = bool(libero_done) or bool(libero_info.get("success", False))
+        terminated = bool(libero_done) or success
         truncated = (self._step_idx >= self.max_episode_steps)
 
         info = self._build_info(extra=dict(
@@ -415,7 +446,7 @@ class SafeLiberoEnv(gym.Env):
             r_damage=r_dmg,
             damage_step=float(damage_step),
             damage_total=float(damage_total),
-            success=bool(libero_info.get("success", False)),
+            success=success,
         ))
 
         return self._build_obs(obs), float(reward), terminated, truncated, info
@@ -498,6 +529,17 @@ class SafeLiberoEnv(gym.Env):
                 # OpenGL orientation for the policy, drop the flipud here.
                 out["agentview_rgb"] = np.flipud(
                     np.asarray(rgb)).copy().astype(np.uint8)
+        if self.pred_features_in_obs:
+            # Fixed-order vector over the canonical body list captured at
+            # __init__ time.  Missing entries (the predictor's per_entity
+            # may be sparse when masks are empty for some bodies) default to 0.
+            out["pred_per_body"] = np.array(
+                [self._last_pred_per_body.get(b, 0.0)
+                 for b in self._body_names], dtype=np.float32)
+            gate = self._last_gate_prob
+            if not np.isfinite(gate):
+                gate = 0.0
+            out["gate_prob"] = np.array([gate], dtype=np.float32)
         return out
 
     def _build_info(self, *, extra: dict) -> dict:
