@@ -1,0 +1,16 @@
+# Per-object severity (value weight), substring-matched against MuJoCo body names.
+# Used by scripts/safety/eval_trajectories.py --severity_config: it weights each
+# object's realized HP loss in the cost (cost = sum_e severity(e) * damage(e)) AND
+# is fed to the contact predictor, so both value objects identically.
+#
+# Higher = we care more if it's damaged. 0 = structural / don't care.
+akita_black_bowl: 10
+ramekin: 10
+porcelain: 10
+mug: 8
+plate: 3
+cookies: 2
+basket: 1
+cabinet: 0
+drawer: 0
+table: 0
